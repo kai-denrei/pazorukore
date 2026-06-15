@@ -240,6 +240,7 @@ const SHIPPED_GAMES = [
   { n: 'Shikaku', i: 'region-draw', d: 'Divide the grid into rectangles; each rectangle’s area equals the clue number it contains.' },
 ];
 const NEXT_GAMES = [
+  { n: 'Bridges', i: 'bridge-draw', d: 'Connect numbered islands with bridges (1 or 2 between a pair, never crossing) so each island has exactly its number of bridges and the whole network is one connected web. (Tatham’s Bridges / Hashiwokakero — in progress, same skins.)' },
   { n: 'Fillomino', i: 'region-paint', d: 'Every cell holds a number; carve the grid into regions where a region of size N is filled entirely with N. The densest glyph showcase.' },
   { n: 'KenKen / Killer', i: 'digit + cages', d: 'A Latin-square base with arithmetic cages — the numbers in each cage must reach a target via +, −, × or ÷.' },
   { n: 'Slitherlink', i: 'edge-draw', d: 'Draw a single closed loop along the grid lines; each clue says how many of its four sides the loop uses. Needs a new edge-draw interaction.' },
