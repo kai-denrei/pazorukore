@@ -1,0 +1,20 @@
+/* src/skins/retro/palette.css — OKLCH palette tokens for the Retro skin (§8.3 / §9.2).
+   NOTE: skin.js applyPalette() is the AUTHORITATIVE source (it sets these on the board root at
+   runtime so the canvas adapter and CSS share one palette). This file mirrors the tokens as a
+   design reference and for anyone theming by stylesheet swap. Warm amber/orange — Lixie/Nixie warmth. */
+.skin-retro {
+  --surface-bg: oklch(0.16 0.03 60);
+  --surface-cell: transparent;
+  --surface-cell-active: oklch(0.46 0.10 65 / 0.16);
+  --glyph-on: #ffc24a;
+  --glyph-off: #5a3a16;
+  --glyph-given: #ffe7c2;
+  --glyph-error: #ff5a3c;
+  --region-border: #ff9a3a;
+  --region-fill: oklch(0.42 0.09 60 / 0.12);
+  --region-validated: #ffd27a;
+  --accent: #ff9a3a;
+  --halo: #ffb347;
+  --grid-line: oklch(0.64 0.11 62 / 0.5);
+  --text-chrome: #ffe7c2;
+}

@@ -1,0 +1,434 @@
+/* styles.css — app chrome + layout. The CHROME is a stable house identity (§13); SKINS theme
+   only the board (their OKLCH palette tokens are set on #board by each skin's applyPalette). */
+
+:root {
+  /* house chrome identity — not skinned */
+  --chrome-bg: #08080a;
+  --chrome-panel: #101014;
+  --chrome-line: #23232b;
+  --chrome-ink: #c9c6c0;
+  --chrome-ink-dim: #6b6862;
+  --chrome-accent: #00e5d0;
+  --serif: "Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --jp: "Noto Sans JP", "Hiragino Sans", "Yu Gothic", sans-serif;
+
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--chrome-bg);
+  color: var(--chrome-ink);
+  font-family: var(--mono);
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  /* lock against accidental zoom/selection on touch (§11.1) */
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+  padding: var(--safe-t) var(--safe-r) 0 var(--safe-l);
+}
+
+/* ── Chrome / top bar ───────────────────────────────────────────────────────── */
+.chrome {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;   /* brand · New Puzzle (centered) · actions */
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--chrome-line);
+  background: linear-gradient(180deg, var(--chrome-panel), var(--chrome-bg));
+}
+
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; justify-self: stretch; overflow: hidden; }
+
+/* New Puzzle — primary action, centered & enlarged */
+.chrome-new {
+  justify-self: center;
+  width: 54px; height: 54px;
+  display: grid; place-items: center;
+  background: radial-gradient(120% 120% at 50% 25%, color-mix(in oklch, var(--chrome-accent) 22%, var(--chrome-panel)), var(--chrome-panel));
+  border: 1px solid color-mix(in oklch, var(--chrome-accent) 55%, var(--chrome-line));
+  border-radius: 50%;
+  color: var(--chrome-accent);
+  font-size: 28px; line-height: 1; cursor: pointer;
+  box-shadow: 0 0 18px -6px color-mix(in oklch, var(--chrome-accent) 70%, transparent);
+}
+.chrome-new:active { transform: translateY(1px) scale(0.96); }
+
+/* timer — a 16-segment clock in a small dark bezel, centered in the chrome */
+.timer-clock {
+  justify-self: center;
+  width: 112px; height: 42px;
+  border-radius: 8px;
+  background: #0a0203;
+  box-shadow: inset 0 0 0 1px #2a0c0c, inset 0 3px 10px -5px #000, 0 0 14px -8px #ff2a2a;
+}
+@media (max-width: 430px) {
+  .brand-name { display: none; }          /* the パ logo + glyphs are enough; free width for the centered clock */
+  .timer-clock { width: 104px; height: 40px; }
+}
+
+.brand-logo {            /* the katakana パ logo — medium */
+  font-family: var(--jp);
+  font-weight: 700;
+  font-size: 26px;
+  line-height: 1;
+  color: var(--chrome-accent);
+  text-shadow: 0 0 14px color-mix(in oklch, var(--chrome-accent) 55%, transparent);
+}
+
+.brand-name {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 21px;
+  letter-spacing: 0.3px;
+  color: var(--chrome-ink);
+  white-space: nowrap;
+}
+
+/* 3-glyph build/version indicator — small, top-left, next to the name */
+.version-glyphs { display: inline-flex; gap: 3px; align-items: center; margin-left: 2px; }
+.version-glyphs svg { width: 11px; height: 11px; display: block; opacity: 0.92; }
+.version-glyphs .vg-token {
+  font-family: var(--mono); font-size: 9px; color: var(--chrome-ink-dim);
+  letter-spacing: 0.5px; margin-left: 3px;
+}
+
+.chrome-actions { display: flex; gap: 5px; flex: 0 0 auto; justify-self: end; }
+.chrome-btn {
+  width: 36px; height: 36px;
+  display: grid; place-items: center;
+  background: var(--chrome-panel);
+  border: 1px solid var(--chrome-line);
+  border-radius: 9px;
+  color: var(--chrome-ink);
+  font-family: var(--mono); font-size: 18px; line-height: 1;
+  cursor: pointer;
+}
+.chrome-btn:active { transform: translateY(1px); }
+.chrome-btn[aria-pressed="true"] { border-color: var(--chrome-accent); color: var(--chrome-accent); }
+
+/* ── Stage: board on top, controls docked at bottom (thumb zone, §11.1) ──────── */
+.stage {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.board-wrap {
+  flex: 1 1 auto;
+  display: grid;
+  place-items: center;
+  position: relative;
+  padding: 12px;
+  min-height: 0;
+}
+
+/* the board is a square sized to min(available width, available height) */
+.board {
+  position: relative;
+  width: min(calc(100vw - 30px), calc(100dvh - 224px));
+  aspect-ratio: 1 / 1;
+  max-width: 520px;
+  touch-action: none; /* the board handles its own pointer gestures */
+}
+
+/* larger primary New button, centered under the timer */
+.new-dock { display: flex; justify-content: center; padding: 9px 14px 2px; flex: 0 0 auto; }
+.btn-new-big {
+  display: inline-flex; align-items: center; gap: 9px;
+  min-height: 48px; padding: 0 30px;
+  border-radius: 26px; cursor: pointer;
+  background: radial-gradient(130% 130% at 50% 18%, color-mix(in oklch, var(--chrome-accent) 26%, var(--chrome-panel)), var(--chrome-panel));
+  border: 1.5px solid color-mix(in oklch, var(--chrome-accent) 60%, var(--chrome-line));
+  color: var(--chrome-accent);
+  font-family: var(--serif); font-size: 21px; letter-spacing: 0.3px;
+  box-shadow: 0 0 22px -7px color-mix(in oklch, var(--chrome-accent) 80%, transparent);
+}
+.btn-new-big:active { transform: translateY(1px) scale(0.98); }
+.btn-new-big .nb-ico { font-size: 22px; line-height: 1; }
+
+/* board grid: CSS owns layout, the canvases mirror it (board.js measures the buttons) */
+.board.is-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 9), 1fr);
+  grid-template-rows: repeat(var(--rows, 9), 1fr);
+  gap: var(--cell-gap, 2px);
+  padding: var(--board-pad, 6px);
+  background: var(--surface-bg, #0a0a0c);
+  border-radius: 12px;
+  overflow: hidden;
+}
+/* canvas covers the FULL board (incl. padding) so its origin matches the cell box origin computed
+   by board.js — inset here (while the backing store is full-board) would scale + offset every glyph. */
+.board-canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.board-canvas.grid-layer { z-index: 1; }
+.board-canvas.glyph-layer { z-index: 2; }
+.board .cell {
+  position: relative;
+  z-index: 3;
+  appearance: none;
+  margin: 0; padding: 0;
+  background: var(--surface-cell, transparent);
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  color: transparent;
+  min-width: 0; min-height: 0;
+}
+/* selection ring uses a CONTRASTING colour (--select) vs the grid accent — amber on a teal grid. */
+.board .cell.is-selected { box-shadow: inset 0 0 0 2px var(--select, #ffb000), 0 0 16px -3px var(--select, #ffb000); background: color-mix(in oklch, var(--select, #ffb000) 8%, transparent); }
+.board .cell.is-conflict { box-shadow: inset 0 0 0 1px var(--glyph-error, #ff4d4d); }
+
+.hud {
+  position: absolute;
+  top: 8px; left: 50%; transform: translateX(-50%);
+  font-family: var(--mono); font-size: 15px; font-weight: 700;
+  color: var(--chrome-ink-dim);
+  pointer-events: none;
+  padding: 3px 10px; border-radius: 8px;
+  background: color-mix(in oklch, var(--chrome-bg) 70%, transparent);
+  text-shadow: 0 0 8px #000;
+}
+.hud.match { color: var(--region-validated, #8affe8); }
+
+/* elapsed-time clock — top-right of the board, dim until solved */
+.timer {
+  position: absolute;
+  top: 6px; right: 8px;
+  font-family: var(--mono); font-size: 13px; font-variant-numeric: tabular-nums;
+  color: var(--chrome-ink-dim);
+  padding: 2px 8px; border-radius: 7px;
+  background: color-mix(in oklch, var(--chrome-bg) 62%, transparent);
+  pointer-events: none; letter-spacing: 0.5px;
+}
+.timer.solved { color: var(--region-validated, var(--chrome-accent)); font-weight: 700; }
+
+/* region-draw rubber-band preview (§11.3) — offset, snapped, never the finger-occluded cells */
+.region-preview {
+  position: absolute; z-index: 6; pointer-events: none;
+  border: 2px solid var(--accent, #00e5d0);
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--accent, #00e5d0) 14%, transparent);
+  box-shadow: 0 0 18px -4px var(--halo, #00e5d0), inset 0 0 12px -4px var(--halo, #00e5d0);
+}
+.region-preview.match {
+  border-color: var(--region-validated, #8affe8);
+  background: color-mix(in oklch, var(--region-validated, #8affe8) 22%, transparent);
+}
+.region-preview.invalid {
+  border-color: var(--glyph-error, #ff4d4d);
+  background: color-mix(in oklch, var(--glyph-error, #ff4d4d) 14%, transparent);
+  box-shadow: 0 0 16px -5px var(--glyph-error, #ff4d4d);
+}
+
+.controls {
+  flex: 0 0 auto;
+  padding: 10px 14px calc(12px + var(--safe-b));
+  border-top: 1px solid var(--chrome-line);
+  background: linear-gradient(0deg, var(--chrome-panel), var(--chrome-bg));
+}
+
+/* ── Overlays (picker / settings / about) ───────────────────────────────────── */
+.overlay {
+  position: fixed; inset: 0;
+  background: color-mix(in oklch, var(--chrome-bg) 86%, transparent);
+  backdrop-filter: blur(6px);
+  z-index: 40;
+  display: grid; place-items: center;
+  padding: calc(20px + var(--safe-t)) 18px calc(20px + var(--safe-b));
+}
+.overlay[hidden] { display: none; }
+.overlay .sheet {
+  width: min(440px, 100%);
+  max-height: 100%;
+  overflow: auto;
+  background: var(--chrome-panel);
+  border: 1px solid var(--chrome-line);
+  border-radius: 16px;
+  padding: 20px;
+}
+.overlay h2 { font-family: var(--serif); font-weight: 600; margin: 0 0 4px; font-size: 24px; }
+.overlay .muted { color: var(--chrome-ink-dim); font-size: 12px; }
+
+/* ── Admin / tuning panel (?admin or the + button, §dev) ─────────────────────── */
+.admin-panel {
+  position: fixed;
+  top: calc(56px + var(--safe-t)); right: 0;
+  width: min(320px, 92vw);
+  max-height: calc(100dvh - 70px);
+  overflow: auto;
+  background: color-mix(in oklch, var(--chrome-panel) 96%, black);
+  border: 1px solid var(--chrome-line);
+  border-radius: 12px 0 0 12px;
+  box-shadow: -10px 0 40px -16px #000;
+  z-index: 50;
+  padding: 12px 14px;
+  font-size: 12px;
+}
+.admin-panel[hidden] { display: none; }
+.admin-panel h3 { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--chrome-ink-dim); margin: 14px 0 6px; }
+.admin-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; margin: 5px 0; }
+.admin-row label { color: var(--chrome-ink); font-size: 11px; }
+.admin-row input[type="range"] { width: 100%; accent-color: var(--chrome-accent); }
+.admin-row .val { font-variant-numeric: tabular-nums; color: var(--chrome-ink-dim); min-width: 34px; text-align: right; }
+.admin-row input[type="color"] { width: 28px; height: 22px; padding: 0; border: 1px solid var(--chrome-line); background: none; border-radius: 4px; }
+.admin-actions { display: flex; gap: 8px; margin-top: 12px; }
+.admin-actions button {
+  flex: 1; padding: 8px; border-radius: 8px; cursor: pointer;
+  background: var(--chrome-bg); color: var(--chrome-ink);
+  border: 1px solid var(--chrome-line); font-family: var(--mono); font-size: 11px;
+}
+
+/* build-status placeholder (shown until a game+skin+board are all present) */
+.board-status {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  text-align: center;
+  border: 1px solid var(--chrome-line); border-radius: 14px;
+  background: radial-gradient(120% 80% at 50% 0%, #0e0e13, #08080a);
+}
+.bs-logo { font-family: var(--jp); font-size: 56px; color: var(--chrome-accent); text-shadow: 0 0 26px color-mix(in oklch, var(--chrome-accent) 60%, transparent); }
+.bs-title { font-family: var(--serif); font-size: 26px; }
+.bs-line { font-family: var(--mono); font-size: 13px; color: var(--chrome-ink-dim); }
+.bs-missing { font-size: 11px; color: var(--chrome-ink-dim); margin-top: 8px; }
+.bs-missing code, .bs-hint code { color: var(--chrome-accent); }
+.bs-hint { font-size: 10px; color: #3f4a48; margin-top: 2px; }
+
+/* picker sheet */
+.pick-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 12px; }
+.pick {
+  padding: 9px 14px; border-radius: 9px; cursor: pointer;
+  background: var(--chrome-bg); color: var(--chrome-ink);
+  border: 1px solid var(--chrome-line); font-family: var(--mono); font-size: 13px; text-transform: capitalize;
+}
+.pick[aria-pressed="true"] { border-color: var(--chrome-accent); color: var(--chrome-accent); }
+
+/* pipeline / roadmap sheet */
+.pl-list { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 6px; }
+.pl-card { border: 1px solid var(--chrome-line); border-left-width: 3px; border-radius: 10px; padding: 9px 12px; background: var(--chrome-bg); }
+.pl-card.done { border-left-color: var(--chrome-accent); }
+.pl-card.next { border-left-color: #4a4a52; }
+.pl-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.pl-name { font-family: var(--serif); font-size: 17px; color: var(--chrome-ink); }
+.pl-card.done .pl-name { color: var(--chrome-accent); }
+.pl-tag { font-family: var(--mono); font-size: 9px; color: var(--chrome-ink-dim); text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; }
+.pl-desc { margin: 4px 0 0; font-size: 12px; line-height: 1.5; color: var(--chrome-ink-dim); }
+.pl-foot { margin-top: 14px; }
+
+/* controls dock (numpad / undo-redo / tools) */
+.ctrl-bar { display: flex; flex-direction: column; gap: 10px; max-width: 560px; margin: 0 auto; }
+.ctrl-tools { display: flex; gap: 8px; justify-content: center; }
+.ctrl-btn {
+  flex: 1; max-width: 84px; min-height: 46px;
+  display: grid; place-items: center;
+  background: var(--chrome-panel); color: var(--chrome-ink);
+  border: 1px solid var(--chrome-line); border-radius: 11px;
+  font-family: var(--mono); font-size: 19px; cursor: pointer;
+}
+.ctrl-btn:disabled { opacity: 0.32; }
+.ctrl-btn[aria-pressed="true"] { border-color: var(--chrome-accent); color: var(--chrome-accent); }
+.ctrl-btn:active { transform: translateY(1px); }
+
+.numpad { display: grid; grid-template-columns: repeat(9, 1fr); gap: 6px; }
+@media (max-width: 430px) { .numpad { grid-template-columns: repeat(9, 1fr); gap: 4px; } }
+.numkey {
+  position: relative;
+  min-height: 52px;
+  background: var(--chrome-panel); color: var(--chrome-ink);
+  border: 1px solid var(--chrome-line); border-radius: 11px;
+  font-family: var(--mono); font-size: 21px; cursor: pointer;
+  display: grid; place-items: center;
+}
+.numkey:active { transform: translateY(1px); border-color: var(--chrome-accent); }
+.numkey.done { opacity: 0.34; }
+.numkey .nk-rem {
+  position: absolute; top: 3px; right: 5px;
+  font-size: 9px; color: var(--chrome-ink-dim); font-variant-numeric: tabular-nums;
+}
+
+.admin-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+.admin-head strong { font-family: var(--serif); font-size: 17px; }
+.admin-sec-head { margin: 16px 0 2px; padding-top: 11px; border-top: 1px solid var(--chrome-line); font-family: var(--serif); font-size: 16px; color: var(--chrome-accent); }
+.admin-sec-head:first-of-type { border-top: 0; padding-top: 2px; margin-top: 6px; }
+.admin-tabs { display: flex; gap: 6px; margin: 10px 0 4px; }
+.admin-tab { flex: 1; padding: 8px 10px; border-radius: 8px; cursor: pointer; background: var(--chrome-bg); color: var(--chrome-ink-dim); border: 1px solid var(--chrome-line); font-family: var(--mono); font-size: 12px; }
+.admin-tab.on { border-color: var(--chrome-accent); color: var(--chrome-accent); }
+.admin-copied { margin-top: 8px; font-size: 10px; word-break: break-all; }
+.admin-row select, .admin-row input[type="text"] { background: var(--chrome-bg); color: var(--chrome-ink); border: 1px solid var(--chrome-line); border-radius: 5px; font-family: var(--mono); font-size: 11px; padding: 2px 4px; }
+
+/* overlay sheet links + game-ID row */
+.sheet-links { display: flex; gap: 14px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--chrome-line); }
+.link { background: none; border: 0; color: var(--chrome-accent); font-family: var(--mono); font-size: 13px; cursor: pointer; padding: 4px 0; }
+.overlay a { color: var(--chrome-accent); }
+.gid-row { display: flex; gap: 6px; margin: 4px 0 12px; }
+.gid-input { flex: 1; min-width: 0; background: var(--chrome-bg); color: var(--chrome-ink); border: 1px solid var(--chrome-line); border-radius: 8px; font-family: var(--mono); font-size: 12px; padding: 8px; }
+
+/* discoverability hint under the tools */
+.ctrl-hint { text-align: center; font-size: 10px; color: var(--chrome-ink-dim); margin-top: 9px; letter-spacing: 0.3px; }
+
+/* number popup — opens at the tap point with "5" under the finger (digit-entry second tap) */
+.numpop-backdrop { position: fixed; inset: 0; z-index: 60; }
+.numpop {
+  position: fixed; left: 0; top: 0;
+  padding: 10px; border-radius: 18px;
+  background: color-mix(in oklch, #14110b 72%, transparent);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 16px 50px -10px #000, inset 0 0 0 1px color-mix(in oklch, #ffb000 28%, transparent);
+  opacity: 0; transform: scale(0.9); transition: opacity .12s ease, transform .12s ease;
+}
+.numpop.in { opacity: 1; transform: scale(1); }
+.numpop-tag { text-align: center; font-family: var(--mono); font-size: 9px; letter-spacing: 1px; text-transform: uppercase; color: #9fb6c8; margin-bottom: 6px; }
+.numpop-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+.numpop-key {
+  position: relative; width: 58px; height: 58px;
+  display: grid; place-items: center;
+  background: color-mix(in oklch, #1c1610 66%, transparent);
+  border: 1px solid color-mix(in oklch, #ffb000 26%, transparent);
+  border-radius: 13px; cursor: pointer;
+  color: #ffb44d; font-family: var(--mono); font-size: 25px; font-weight: 500;
+  text-shadow: 0 0 12px color-mix(in oklch, #ff9000 55%, transparent);
+}
+.numpop-key:active { transform: scale(0.93); border-color: #ffb000; background: color-mix(in oklch, #ffb000 16%, transparent); }
+.numpop-key.np-done { opacity: 0.4; }
+.numpop.is-pencil .numpop-key { color: #a7c0d6; font-size: 20px; text-shadow: 0 0 10px color-mix(in oklch, #5a86c8 50%, transparent); border-color: color-mix(in oklch, #5a86c8 26%, transparent); }
+.np-rem { position: absolute; top: 4px; right: 7px; font-size: 9px; color: var(--chrome-ink-dim); }
+
+/* PWA install hint + update toast */
+.pwa-toast {
+  position: fixed; left: 50%; bottom: calc(14px + var(--safe-b)); transform: translateX(-50%);
+  z-index: 70; max-width: calc(100vw - 28px);
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; border-radius: 12px;
+  background: color-mix(in oklch, var(--chrome-panel) 96%, black);
+  border: 1px solid var(--chrome-accent); color: var(--chrome-ink);
+  font-family: var(--mono); font-size: 13px; line-height: 1.3;
+  box-shadow: 0 14px 44px -12px #000;
+}
+.pwa-toast[hidden] { display: none; }
+.pwa-toast .logo { font-family: var(--jp); color: var(--chrome-accent); font-size: 18px; }
+.pwa-toast button { padding: 6px 12px; border-radius: 8px; cursor: pointer; background: var(--chrome-accent); color: #06201d; border: 0; font-family: var(--mono); font-weight: 700; font-size: 12px; }
+.pwa-toast button.x { background: none; color: var(--chrome-ink-dim); padding: 4px 6px; font-weight: 400; }
+#install-hint { bottom: auto; top: calc(64px + var(--safe-t)); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+}
+body.force-reduced * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }

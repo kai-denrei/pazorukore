@@ -1,0 +1,20 @@
+/* src/skins/futuristic/palette.css — OKLCH palette tokens for the Futuristic skin (§8.3).
+   NOTE: skin.js applyPalette() is the AUTHORITATIVE source (it sets these on the board root at
+   runtime so the canvas adapter and CSS share one palette). This file mirrors the tokens as a
+   design reference and for anyone theming by stylesheet swap. */
+.skin-futuristic {
+  --surface-bg: oklch(0.135 0.02 200);
+  --surface-cell: transparent;
+  --surface-cell-active: oklch(0.40 0.10 195 / 0.16);
+  --glyph-on: #1bf0c8;
+  --glyph-off: #2c4f4b;
+  --glyph-given: #cdeeff;
+  --glyph-error: #ff556b;
+  --region-border: #00e5d0;
+  --region-fill: oklch(0.42 0.10 190 / 0.12);
+  --region-validated: #8affe8;
+  --accent: #00e5d0;
+  --halo: #00e5d0;
+  --grid-line: oklch(0.62 0.13 190 / 0.55);
+  --text-chrome: #cdeeff;
+}

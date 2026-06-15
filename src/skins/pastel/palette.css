@@ -1,0 +1,20 @@
+/* src/skins/pastel/palette.css — OKLCH palette tokens for the Pastel skin (§8.3 / §9.3).
+   NOTE: skin.js applyPalette() is the AUTHORITATIVE source (it sets these on the board root at
+   runtime so the canvas adapter and CSS share one palette). This file mirrors the tokens as a
+   design reference and for anyone theming by stylesheet swap. LIGHT surface, soft pastel accents. */
+.skin-pastel {
+  --surface-bg: oklch(0.95 0.015 85);
+  --surface-cell: transparent;
+  --surface-cell-active: oklch(0.86 0.04 25 / 0.35);
+  --glyph-on: #3a3530;
+  --glyph-off: #b9b0a2;
+  --glyph-given: #5a6b8c;
+  --glyph-error: #c25a6b;
+  --region-border: #9fc2b6;
+  --region-fill: oklch(0.88 0.03 330 / 0.45);
+  --region-validated: oklch(0.86 0.06 160 / 0.55);
+  --accent: #9fc2b6;
+  --halo: oklch(0.86 0.05 25 / 0.4);
+  --grid-line: oklch(0.80 0.02 85 / 0.6);
+  --text-chrome: #4a443d;
+}

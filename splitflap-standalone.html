@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Split-flap (Solari) — dexipurei standalone</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Noto+Sans+JP:wght@500&display=swap" rel="stylesheet">
+<style>
+  html,body{margin:0;height:100%;background:#08080a;color:#8b8780;
+    font:13px/1.5 "JetBrains Mono",ui-monospace,monospace;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:14px;min-height:100%}
+  .bezel{padding:20px;border-radius:14px;background:linear-gradient(145deg,#121216,#070708);
+    box-shadow:inset 0 1px 0 #2a2a32,inset 0 0 0 1px #000,0 24px 60px -20px #000}
+  canvas{display:block;width:min(720px,92vw);height:min(340px,46vw);border-radius:6px}
+  .cap{font-size:11px;letter-spacing:.3px;color:#6b6862;text-align:center;padding:0 12px}
+  .cap b{color:#00e5d0;font-weight:500}
+</style></head>
+<body>
+  <div class="bezel"><canvas id="s"></canvas></div>
+  <div class="cap"><b>Split-flap (Solari)</b> · seed 936869713 · dexipurei-galore standalone · runs offline, zero deps</div>
+<script>
+"use strict";
+// --- core/rng.js ---
+// rng.js — the single seeded PRNG + spatial hash. ALL randomness in the library flows through here,
+// so one `seed` number re-rolls every module's wear identically-reproducibly.
+
+function mulberry32(a) {
+  a = a >>> 0;
+  return function () {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Stable per-element hash → [0,1). Same (x, y, seed) ALWAYS yields the same value, so wear stays
+// pinned to a pixel/segment across frames and re-renders.
+function hash(x, y, seed = 0) {
+  let n = (Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ Math.imul(seed | 0, 2147483647)) | 0;
+  n = Math.imul(n ^ (n >>> 13), 1274126177);
+  return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
+}
+
+// The helper object handed to every render(ctx, p, t, rng).
+//   rng.rand()      → next value of a seeded stream (use for things that may change frame-to-frame)
+//   rng.hash(x, y)  → stable value for element (x, y) under this seed (use for fixed wear)
+function makeRng(seed) {
+  const s = (seed >>> 0) || 0;
+  const rand = mulberry32(s);
+  return { seed: s, rand, hash: (x, y) => hash(x, y, s) };
+}
+
+
+// --- core/color.js ---
+// color.js — sRGB helpers + OKLCH passthrough. Modern canvas/CSS parse oklch() natively, so for
+// perceptual derivation we just emit the string and let the engine do the conversion.
+
+function hex2rgb(h) {
+  h = String(h).replace('#', '');
+  if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+}
+
+function rgb2hex(c) {
+  return '#' + c.map((v) => Math.max(0, Math.min(255, v | 0)).toString(16).padStart(2, '0')).join('');
+}
+
+// linear sRGB interpolation. t in [0,1].
+const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+
+const rgba = (c, a) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`;
+
+// OKLCH string for mixing/derivation where perceptual uniformity matters.
+//   l: 0..1 lightness · c: 0..~0.4 chroma · h: 0..360 hue · a: 0..1 alpha
+const oklch = (l, c, h, a = 1) => `oklch(${l} ${c} ${h}${a < 1 ? ` / ${a}` : ''})`;
+
+
+// --- core/contract.js ---
+// contract.js — the ONE interface every display module implements, plus param resolution and the
+// stage-size helper. controls.js and exporter.js read only this shape, so they stay generic.
+
+/** @typedef {'emissive'|'reflective'|'electromechanical'|'volumetric'|'aerial'} Category */
+/**
+ * @typedef {Object} Param
+ * @property {string} key
+ * @property {string} label
+ * @property {'range'|'color'|'toggle'|'select'|'text'} type
+ * @property {number} [min] @property {number} [max] @property {number} [step]
+ * @property {string[]} [options]   // for type 'select'
+ * @property {*} default
+ * @property {string} [group]       // controls panel groups by this
+ */
+/**
+ * @typedef {Object} Display
+ * @property {string} id            // MUST equal the filename stem (e.g. 'dotmatrix' → displays/dotmatrix.js)
+ * @property {string} name
+ * @property {Category} category
+ * @property {string} physics       // one-line note on the real emission/reflection/motion
+ * @property {string[]} USES        // core helper names the standalone export should inline (documentary in V1)
+ * @property {Param[]} params
+ * @property {Object<string,Object>} [presets]   // named partial param bundles
+ * @property {(canvas:HTMLCanvasElement)=>any} [init]
+ * @property {(ctx:CanvasRenderingContext2D, p:Object, t:number, rng:{seed:number,rand:()=>number,hash:(x:number,y:number)=>number})=>void} render
+ * @property {()=>void} [dispose]
+ */
+
+/* ============================================================================
+   RENDER CONTRACT — read this before adding a module
+   ----------------------------------------------------------------------------
+   • The APP sizes ctx.canvas (dpr-aware backing store) and applies the dpr transform BEFORE
+     calling render. Read your logical drawing area from stageSize(ctx) → { w, h, dpr }, then
+     draw within [0,w] × [0,h]. Do NOT resize the canvas yourself — center/scale your content
+     into the stage so every module (and the landing mini-previews) share one frame size.
+   • Paint your own background (fill the stage) — the app does not clear for you. BUT guard the opaque
+     full-canvas backdrop (and any bespoke full-canvas wash/tint YOU draw) behind `if (!p.transparent)`:
+     when p.transparent is true (set only during PNG export) skip them so the export keeps alpha. Off
+     elements may still use the bg color for compositing — only full-canvas paints are suppressed. The
+     shared overlays vignette/scanlines/ambientGradient (fx) and grain (wear) already self-suppress via
+     ctx.canvas._transparent, so you do NOT guard those — only your own module-authored full-canvas fills.
+   • render is a pure function of (ctx, p, t, rng):
+       - route ALL wear/variance/dead-element decisions through rng.hash(x, y) so a seed re-roll
+         is reproducible. Use rng.rand() only for things meant to shimmer frame-to-frame.
+       - animation may use t (ms). Do not read Date.now()/Math.random() for reproducible state.
+   • p carries p.seed plus every param key (resolved from defaults + overrides). presets are
+     partial bundles merged over defaults.
+   • Reference only your own file-scope helpers and the core utils you `import` and name in USES.
+     (The standalone exporter inlines the core utils + your module source so the file runs offline.)
+   ============================================================================ */
+
+function stageSize(ctx) {
+  const cv = ctx.canvas;
+  const dpr = cv._dpr || 1;
+  return { w: cv.width / dpr, h: cv.height / dpr, dpr };
+}
+
+// Build a fully-resolved params object from a module's schema + optional overrides. Always includes seed.
+function resolveParams(mod, overrides = {}) {
+  const p = { seed: 1 };
+  for (const param of mod.params) p[param.key] = param.default;
+  return Object.assign(p, overrides);
+}
+
+
+// --- core/text-raster.js ---
+// text-raster.js — turn any string into a lit/unlit grid.
+//   ASCII (0-9, A-Z, punctuation) → crisp built-in 5×7 font.
+//   Anything else (日本語, kana, emoji, accented latin) → rasterize a web font and sample to a grid.
+// Results are cached by (str, height, mode) so we don't re-rasterize every animation frame.
+
+// 5×7 dot-matrix font — rows top→bottom, '1' = lit. (From the reference dot-matrix module.)
+const F = {
+  '0': ['01110', '10001', '10011', '10101', '11001', '10001', '01110'],
+  '1': ['00100', '01100', '00100', '00100', '00100', '00100', '01110'],
+  '2': ['01110', '10001', '00001', '00010', '00100', '01000', '11111'],
+  '3': ['11111', '00010', '00100', '00010', '00001', '10001', '01110'],
+  '4': ['00010', '00110', '01010', '10010', '11111', '00010', '00010'],
+  '5': ['11111', '10000', '11110', '00001', '00001', '10001', '01110'],
+  '6': ['00110', '01000', '10000', '11110', '10001', '10001', '01110'],
+  '7': ['11111', '00001', '00010', '00100', '01000', '01000', '01000'],
+  '8': ['01110', '10001', '10001', '01110', '10001', '10001', '01110'],
+  '9': ['01110', '10001', '10001', '01111', '00001', '00010', '01100'],
+  ':': ['00000', '00100', '00100', '00000', '00100', '00100', '00000'],
+  '.': ['00000', '00000', '00000', '00000', '00000', '00000', '00100'],
+  ',': ['00000', '00000', '00000', '00000', '00100', '00100', '01000'],
+  '-': ['00000', '00000', '00000', '11111', '00000', '00000', '00000'],
+  '+': ['00000', '00100', '00100', '11111', '00100', '00100', '00000'],
+  '/': ['00001', '00010', '00010', '00100', '01000', '01000', '10000'],
+  '?': ['01110', '10001', '00001', '00010', '00100', '00000', '00100'],
+  '!': ['00100', '00100', '00100', '00100', '00100', '00000', '00100'],
+  '°': ['01100', '10010', '01100', '00000', '00000', '00000', '00000'],
+  ' ': ['00000', '00000', '00000', '00000', '00000', '00000', '00000'],
+  'A': ['01110', '10001', '10001', '11111', '10001', '10001', '10001'],
+  'B': ['11110', '10001', '10001', '11110', '10001', '10001', '11110'],
+  'C': ['01110', '10001', '10000', '10000', '10000', '10001', '01110'],
+  'D': ['11100', '10010', '10001', '10001', '10001', '10010', '11100'],
+  'E': ['11111', '10000', '10000', '11110', '10000', '10000', '11111'],
+  'F': ['11111', '10000', '10000', '11110', '10000', '10000', '10000'],
+  'G': ['01110', '10001', '10000', '10111', '10001', '10001', '01111'],
+  'H': ['10001', '10001', '10001', '11111', '10001', '10001', '10001'],
+  'I': ['01110', '00100', '00100', '00100', '00100', '00100', '01110'],
+  'J': ['00111', '00010', '00010', '00010', '00010', '10010', '01100'],
+  'K': ['10001', '10010', '10100', '11000', '10100', '10010', '10001'],
+  'L': ['10000', '10000', '10000', '10000', '10000', '10000', '11111'],
+  'M': ['10001', '11011', '10101', '10101', '10001', '10001', '10001'],
+  'N': ['10001', '11001', '10101', '10011', '10001', '10001', '10001'],
+  'O': ['01110', '10001', '10001', '10001', '10001', '10001', '01110'],
+  'P': ['11110', '10001', '10001', '11110', '10000', '10000', '10000'],
+  'Q': ['01110', '10001', '10001', '10001', '10101', '10010', '01101'],
+  'R': ['11110', '10001', '10001', '11110', '10100', '10010', '10001'],
+  'S': ['01111', '10000', '10000', '01110', '00001', '00001', '11110'],
+  'T': ['11111', '00100', '00100', '00100', '00100', '00100', '00100'],
+  'U': ['10001', '10001', '10001', '10001', '10001', '10001', '01110'],
+  'V': ['10001', '10001', '10001', '10001', '10001', '01010', '00100'],
+  'W': ['10001', '10001', '10001', '10101', '10101', '11011', '10001'],
+  'X': ['10001', '10001', '01010', '00100', '01010', '10001', '10001'],
+  'Y': ['10001', '10001', '01010', '00100', '00100', '00100', '00100'],
+  'Z': ['11111', '00001', '00010', '00100', '01000', '10000', '11111'],
+};
+const GW = 5, GH = 7, GAP = 1;
+
+const _cache = new Map();
+const inBuiltin = (str) => [...str].every((c) => F[c] || F[c.toUpperCase()]);
+
+function builtinGrid(str) {
+  const glyphs = [...str].map((c) => F[c] || F[c.toUpperCase()] || F['?']);
+  const cols = glyphs.length ? glyphs.length * GW + (glyphs.length - 1) * GAP : GW;
+  const grid = [];
+  for (let r = 0; r < GH; r++) {
+    const line = [];
+    glyphs.forEach((g, gi) => {
+      for (let c = 0; c < GW; c++) line.push(g[r][c] === '1' ? 1 : 0);
+      if (gi < glyphs.length - 1) line.push(0);
+    });
+    grid.push(line);
+  }
+  return { grid, rows: GH, cols };
+}
+
+let _trCanvas = null;
+// Rasterize arbitrary text (incl. Japanese) into a grid roughly `height` rows tall.
+function rasterGrid(str, height) {
+  const h = Math.max(7, height | 0);
+  if (!_trCanvas) _trCanvas = document.createElement('canvas');
+  const ctx = _trCanvas.getContext('2d');
+  const font = `600 ${h}px "Noto Sans JP","Hiragino Sans","Yu Gothic",sans-serif`;
+  ctx.font = font;
+  const w = Math.max(1, Math.ceil(ctx.measureText(str).width) + 2);
+  const ch = Math.ceil(h * 1.32);
+  _trCanvas.width = w; _trCanvas.height = ch;
+  const c2 = _trCanvas.getContext('2d');
+  c2.clearRect(0, 0, w, ch);
+  c2.fillStyle = '#fff'; c2.textBaseline = 'top'; c2.font = font;
+  c2.fillText(str, 1, Math.floor(h * 0.12));
+  const data = c2.getImageData(0, 0, w, ch).data;
+  let grid = [];
+  for (let y = 0; y < ch; y++) {
+    const line = [];
+    for (let x = 0; x < w; x++) line.push(data[(y * w + x) * 4 + 3] > 90 ? 1 : 0);
+    grid.push(line);
+  }
+  return trim({ grid, rows: ch, cols: w });
+}
+
+// drop fully-empty border rows/cols so the glyph block sits flush (keeps interior spacing)
+function trim(g) {
+  let top = 0, bot = g.rows - 1, left = 0, right = g.cols - 1;
+  const rowEmpty = (r) => g.grid[r].every((v) => !v);
+  const colEmpty = (c) => g.grid.every((row) => !row[c]);
+  while (top < bot && rowEmpty(top)) top++;
+  while (bot > top && rowEmpty(bot)) bot--;
+  while (left < right && colEmpty(left)) left++;
+  while (right > left && colEmpty(right)) right--;
+  const grid = [];
+  for (let r = top; r <= bot; r++) grid.push(g.grid[r].slice(left, right + 1));
+  return { grid, rows: grid.length, cols: grid[0] ? grid[0].length : 1 };
+}
+
+/**
+ * textGrid(str, opts) → { grid:number[][], rows, cols }
+ *   opts.mode: 'auto' (default) | 'ascii' | 'raster'
+ *   opts.height: target rows for rasterized (non-ASCII) text (default 9)
+ */
+function textGrid(str, opts = {}) {
+  const mode = opts.mode || 'auto';
+  const height = opts.height || 9;
+  const key = mode + '|' + height + '|' + str;
+  if (_cache.has(key)) return _cache.get(key);
+  let out;
+  if (mode === 'ascii' || (mode === 'auto' && inBuiltin(str))) out = builtinGrid(str);
+  else out = rasterGrid(str, height);
+  if (_cache.size > 256) _cache.clear();
+  _cache.set(key, out);
+  return out;
+}
+
+
+// --- core/wear.js ---
+// wear.js — the "lived-in" vocabulary. Reuse these instead of re-implementing wear per module.
+// Every function is deterministic in the seed via rng.hash, so wear is reproducible.
+// rng = { seed, rand, hash(x, y) } (from rng.js makeRng).
+
+// per-element brightness multiplier in [1 - amount, 1]
+function vary(rng, x, y, amount) {
+  return 1 - amount * rng.hash(x, y);
+}
+
+// is element (x, y) a weak/dying one, at probability prob (0..1)?
+function isWeak(rng, x, y, prob) {
+  return rng.hash(x + 31, y + 17) < prob;
+}
+
+// scatter faint dust specks across the panel (light + dark flecks)
+function dust(ctx, rng, density, w, h) {
+  if (density <= 0) return;
+  const n = Math.floor(density * (w * h) / 1400);
+  ctx.save();
+  for (let i = 0; i < n; i++) {
+    const x = rng.hash(i + 1, 7) * w, y = rng.hash(i + 3, 11) * h, r = 0.4 + rng.hash(i + 5, 13) * 1.4;
+    const light = rng.hash(i, 9) > 0.5;
+    ctx.fillStyle = `rgba(${light ? '255,255,255' : '0,0,0'},${0.04 + rng.hash(i + 2, 4) * 0.06})`;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// thin hairline scratches
+function scratches(ctx, rng, count, w, h) {
+  if (count <= 0) return;
+  ctx.save(); ctx.lineWidth = 0.6;
+  for (let i = 0; i < count; i++) {
+    const x = rng.hash(i + 1, 21) * w, y = rng.hash(i + 2, 23) * h;
+    const a = rng.hash(i + 3, 25) * Math.PI, len = 8 + rng.hash(i + 4, 27) * 40;
+    ctx.strokeStyle = `rgba(255,255,255,${0.03 + rng.hash(i + 5, 29) * 0.05})`;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// fine luminance grain over the whole frame (cheap; coarsened by `step`)
+function grain(ctx, rng, strength, w, h) {
+  if (ctx.canvas._transparent || strength <= 0) return;   // full-canvas texture — skip for transparent PNG export
+  const step = 3, a = strength * 0.08;
+  ctx.save();
+  for (let y = 0; y < h; y += step) {
+    for (let x = 0; x < w; x += step) {
+      const v = rng.hash((x * 0.5) | 0, ((y * 7) | 0) + ((x * 13) | 0));
+      if (v > 0.6) { ctx.fillStyle = `rgba(${v > 0.8 ? '255,255,255' : '0,0,0'},${a * v})`; ctx.fillRect(x, y, step, step); }
+    }
+  }
+  ctx.restore();
+}
+
+
+// --- core/fx.js ---
+// fx.js — optical post-processing shared across modules.
+// bloom renders a bright pass to an offscreen canvas, blurs it, and composites additively.
+
+let _fxScratch = null;
+function fxScratchCanvas(w, h) {
+  if (!_fxScratch) _fxScratch = document.createElement('canvas');
+  if (_fxScratch.width !== w || _fxScratch.height !== h) { _fxScratch.width = w; _fxScratch.height = h; }
+  return _fxScratch;
+}
+
+// drawFn(g) paints the glow source in the SAME logical coords as ctx; we then blur + add it.
+function bloom(ctx, drawFn, blur, intensity) {
+  if (intensity <= 0 || blur <= 0) return;
+  const cv = ctx.canvas, off = fxScratchCanvas(cv.width, cv.height), g = off.getContext('2d');
+  g.setTransform(ctx.getTransform());
+  g.clearRect(0, 0, cv.width, cv.height);
+  drawFn(g);
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = intensity;
+  ctx.filter = `blur(${blur}px)`;
+  ctx.drawImage(off, 0, 0);
+  ctx.restore();
+  ctx.filter = 'none';
+}
+
+function vignette(ctx, w, h, amount) {
+  if (ctx.canvas._transparent || amount <= 0) return;   // full-canvas darken — skip for transparent PNG export
+  const g = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.25, w / 2, h / 2, Math.max(w, h) * 0.62);
+  g.addColorStop(0, 'rgba(0,0,0,0)');
+  g.addColorStop(1, `rgba(0,0,0,${amount * 0.85})`);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+}
+
+function scanlines(ctx, w, h, opts) {
+  const { gap = 3, alpha = 0.12 } = opts || {};
+  if (ctx.canvas._transparent || alpha <= 0) return;
+  ctx.save(); ctx.fillStyle = `rgba(0,0,0,${alpha})`;
+  for (let y = 0; y < h; y += gap) ctx.fillRect(0, y, w, 1);
+  ctx.restore();
+}
+
+// ambient light gradient for REFLECTIVE panels (flip-dot, e-ink) — lit, not emissive. angle radians.
+function ambientGradient(ctx, w, h, angle, falloff) {
+  if (ctx.canvas._transparent) return;
+  const dx = Math.cos(angle), dy = Math.sin(angle);
+  const g = ctx.createLinearGradient(w / 2 - dx * w, h / 2 - dy * h, w / 2 + dx * w, h / 2 + dy * h);
+  g.addColorStop(0, `rgba(255,255,255,${0.14 * (1 - falloff)})`);
+  g.addColorStop(0.5, 'rgba(255,255,255,0)');
+  g.addColorStop(1, `rgba(0,0,0,${0.22 * (1 - falloff)})`);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+}
+
+// cheap chromatic edge: redraw the canvas shifted in R/B. px = offset in logical px.
+function chromaticOffset(ctx, w, h, px) {
+  if (!px) return;
+  const cv = ctx.canvas;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = 0.22;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  const dpr = cv._dpr || 1;
+  ctx.drawImage(cv, px * dpr, 0);
+  ctx.drawImage(cv, -px * dpr, 0);
+  ctx.restore();
+}
+
+// --- displays/splitflap.js ---
+// splitflap.js — Split-flap / Solari board (electromechanical). HANDOVER §6.05. A drum of printed cards
+// per cell flips through the alphabet to a target string. Classic TWO-LEAF split: a horizontal seam cuts
+// each cell across the middle; the TOP leaf of the current card folds DOWN past the seam, and as it sweeps
+// through 90° the next card's top is revealed behind it. NOT emissive — aged off-white card stock with a
+// dark printed glyph, ambient-lit (no bloom). Cells cascade to the target, flipping through intermediate
+// chars with slight motion blur on fast flips and a settle overshoot/bounce; periodically the board
+// re-scrambles so it's always "arriving". Wear (rng.hash): worn/misaligned cards, per-cell tint variance,
+// an occasional STICKY card that lands a frame late, dust.
+
+
+// the printable card alphabet (the physical drum order). Space + A-Z + 0-9 + a few marks, like a real board.
+const CHARSET = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,:-/'";
+const IDX = (() => { const m = {}; for (let i = 0; i < CHARSET.length; i++) m[CHARSET[i]] = i; return m; })();
+const BOARD_FONT = "'JetBrains Mono', 'Noto Sans JP', sans-serif";   // JP fallback so kana/kanji cards render
+
+// content: text param (upper-cased to the drum charset) or a live clock.
+function content(p) {
+  if (p.source === 'clock') {
+    const d = new Date(), z = (n) => String(n).padStart(2, '0');
+    return z(d.getHours()) + ':' + z(d.getMinutes()) + ':' + z(d.getSeconds());
+  }
+  return (p.text || ' ').toString().toUpperCase();
+}
+
+// map any char to its index on the drum (unknowns land on space).
+function drumIndex(ch) { return IDX[ch] != null ? IDX[ch] : 0; }
+
+// forward distance (cards step one way only, wrapping past the end of the drum) from a→b.
+function fwdDist(a, b, len) { return (b - a + len) % len; }
+
+// per-render drum: the base latin charset + any extra glyphs in the content (kana/kanji) appended, so
+// Japanese targets exist on the drum and the leaves can flip to them (drawn via the JP-fallback font).
+function buildDrum(str) {
+  let d = CHARSET;
+  for (const ch of str) if (d.indexOf(ch) < 0) d += ch;
+  return d;
+}
+
+const __MOD__ = {
+  id: 'splitflap',
+  name: 'Split-flap (Solari)',
+  category: 'electromechanical',
+  physics: 'Printed cards on a per-cell drum step one-way through the alphabet; the top leaf folds down across a mid-cell seam to the target. Ambient-lit aged card stock, dark glyph, mechanical settle bounce.',
+  USES: ['stageSize', 'hex2rgb', 'mix', 'rgba', 'dust'],
+  params: [
+    { key: 'text', label: 'text', type: 'text', max: 18, default: 'Split-Flap', group: 'content' },
+    { key: 'source', label: 'source', type: 'select', options: ['text', 'clock'], default: 'text', group: 'content' },
+    { key: 'card', label: 'card stock', type: 'color', default: '#141210', group: 'color' },
+    { key: 'ink', label: 'printed ink', type: 'color', default: '#f3efe6', group: 'color' },
+    { key: 'bg', label: 'background', type: 'color', default: '#0c0b0a', group: 'color' },
+    { key: 'flipMs', label: 'flip speed', type: 'range', min: 30, max: 200, step: 5, default: 70, group: 'motion' },
+    { key: 'cascade', label: 'flips to target', type: 'range', min: 1, max: 28, step: 1, default: 16, group: 'motion' },
+    { key: 'stagger', label: 'cascade stagger', type: 'range', min: 0, max: 100, step: 1, default: 40, group: 'motion' },
+    { key: 'bounce', label: 'settle bounce', type: 'range', min: 0, max: 100, step: 1, default: 46, group: 'motion' },
+    { key: 'holdMs', label: 'arrival hold', type: 'range', min: 600, max: 6000, step: 100, default: 2600, group: 'motion' },
+    { key: 'gap', label: 'cell gap', type: 'range', min: 2, max: 40, step: 1, default: 12, group: 'geometry' },
+    { key: 'radius', label: 'card radius', type: 'range', min: 0, max: 30, step: 1, default: 9, group: 'geometry' },
+    { key: 'seam', label: 'seam darkness', type: 'range', min: 0, max: 100, step: 1, default: 52, group: 'wear' },
+    { key: 'wear', label: 'card wear', type: 'range', min: 0, max: 100, step: 1, default: 34, group: 'wear' },
+    { key: 'misalign', label: 'misalign jitter', type: 'range', min: 0, max: 100, step: 1, default: 28, group: 'wear' },
+    { key: 'sticky', label: 'sticky cards', type: 'range', min: 0, max: 60, step: 1, default: 14, group: 'wear' },
+    { key: 'dust', label: 'dust', type: 'range', min: 0, max: 100, step: 1, default: 30, group: 'wear' },
+  ],
+  presets: {
+    Solari: { card: '#e9e2d2', ink: '#1a1713', bg: '#0c0b0a', flipMs: 70, cascade: 16, stagger: 40, bounce: 46, holdMs: 2600, gap: 12, radius: 9, seam: 52, wear: 34, misalign: 28, sticky: 14, dust: 30 },
+    Depot: { card: '#1c1a17', ink: '#f3c14a', bg: '#070605', flipMs: 60, cascade: 20, stagger: 55, bounce: 38, holdMs: 2200, gap: 10, radius: 6, seam: 70, wear: 48, misalign: 40, sticky: 22, dust: 44 },
+    Pristine: { card: '#f4efe4', ink: '#15120e', bg: '#0e0d0c', flipMs: 90, cascade: 10, stagger: 24, bounce: 30, holdMs: 3400, gap: 16, radius: 12, seam: 36, wear: 8, misalign: 6, sticky: 0, dust: 8 },
+    Frantic: { card: '#e4ddcc', ink: '#201b15', bg: '#0a0908', flipMs: 36, cascade: 26, stagger: 70, bounce: 64, holdMs: 1200, gap: 8, radius: 8, seam: 58, wear: 40, misalign: 34, sticky: 28, dust: 36 },
+  },
+
+  render(ctx, p, t, rng) {
+    const { w, h } = stageSize(ctx);
+    const cardC = hex2rgb(p.card), inkC = hex2rgb(p.ink), bgC = hex2rgb(p.bg);
+    if (!p.transparent) { ctx.fillStyle = rgba(bgC, 1); ctx.fillRect(0, 0, w, h); }
+
+    const str = content(p);
+    const n = str.length;
+    const DRUM = buildDrum(str), DLEN = DRUM.length;   // drum absorbs any non-latin glyphs in the target
+
+    // --- fit a row of cells to the stage (real flap cells are taller than wide, ~0.66:1) ---
+    const aspect = 0.66, pad = Math.min(w, h) * 0.12, gapPx = (p.gap / 100);
+    let ch = h - pad * 2, cw = ch * aspect, gp = cw * gapPx;
+    const maxW = w - pad * 2, total = (k) => cw * k + gp * (k - 1);
+    if (total(n) > maxW) { const s = maxW / total(n); ch *= s; cw *= s; gp = cw * gapPx; }
+    const startX = (w - total(n)) / 2, y0 = (h - ch) / 2;
+    const fontPx = ch * 0.58, half = ch / 2;   // a touch smaller so full-width kana/kanji fit the card
+    const rad = Math.min(cw, ch) * (p.radius / 100) * 0.5;
+
+    // --- animation clock: one "arrival cycle" = cascade flips + a hold, then re-scramble & arrive again ---
+    const flipMs = Math.max(8, p.flipMs);
+    const cascadeN = Math.max(1, p.cascade | 0);
+    const cycleMs = cascadeN * flipMs + p.holdMs;        // flips first, then the steady hold
+    const cycle = Math.floor(t / cycleMs);               // which arrival we're on (integer, advances with t)
+    const inCycle = t - cycle * cycleMs;                 // ms elapsed inside this arrival
+
+    const bounceA = p.bounce / 100, wearA = p.wear / 100, misA = p.misalign / 100;
+    const stickyP = p.sticky / 100, seamA = p.seam / 100, stagA = p.stagger / 100;
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `${fontPx}px ${BOARD_FONT}`;
+
+    for (let i = 0; i < n; i++) {
+      const cx = startX + cw * (i + 0.5) + gp * i;
+      const cyTop = y0, mid = y0 + half;
+
+      // target this cell must arrive at; a per-cell start char is picked from the *previous* cycle's seed so
+      // each arrival genuinely flips through intermediates (stable per seed + cycle, so it's reproducible).
+      const ti0 = DRUM.indexOf(str[i]); const tgt = ti0 < 0 ? 0 : ti0;
+      const startOff = 1 + Math.floor(rng.hash(i + cycle * 13, 71) * (DLEN - 2)); // 1..len-1 cards back
+      const fromIdx = (tgt - startOff + DLEN) % DLEN;
+      const steps = fwdDist(fromIdx, tgt, DLEN) || DLEN;  // cards to flip this cycle (never zero)
+
+      // cascade stagger: cells nearer the end start a touch later (sweep reads left→right then settling).
+      const stag = stagA * (i / Math.max(1, n - 1)) * cascadeN * 0.5 * flipMs;
+      // sticky cards land one flip late: stretch their step duration slightly (stable per seed).
+      const stick = rng.hash(i + 200, 9) < stickyP ? 1.4 : 1;
+      const localT = inCycle - stag;
+
+      // current flip position: how many whole cards have settled + the in-progress fraction.
+      let settled, frac, flipping;
+      if (localT <= 0) { settled = 0; frac = 0; flipping = true; }
+      else {
+        const stepMs = flipMs * stick;
+        const done = localT / stepMs;
+        if (done >= steps) { settled = steps; frac = 0; flipping = false; }
+        else { settled = Math.floor(done); frac = done - settled; flipping = true; }
+      }
+      const curIdx = (fromIdx + settled) % DLEN;        // card currently showing on the bottom leaf
+      const nextIdx = (fromIdx + settled + 1) % DLEN;   // card about to drop in from above
+      const curCh = DRUM[curIdx], nextCh = DRUM[flipping ? nextIdx : curIdx];
+
+      // settle overshoot: on the very last seated card, add a small decaying bounce on the top leaf.
+      let restAng = 0;
+      if (!flipping && bounceA > 0) {
+        const since = localT - steps * flipMs * stick;            // ms since it seated
+        if (since >= 0 && since < 220) {
+          const b = (1 - since / 220);
+          restAng = Math.sin(since * 0.06) * b * b * bounceA * 0.20; // radians, decaying
+        }
+      }
+
+      // per-cell lived-in: aged tint variance + a tiny static misalignment offset (stable per seed).
+      const tint = mix(cardC, [0, 0, 0], wearA * 0.16 * rng.hash(i + 1, 3));
+      const tintWarm = mix(tint, [120, 96, 60], wearA * 0.10 * rng.hash(i + 5, 7));
+      const mx = (rng.hash(i + 11, 13) - 0.5) * misA * cw * 0.04;
+      const my = (rng.hash(i + 17, 19) - 0.5) * misA * ch * 0.04;
+
+      ctx.save();
+      ctx.translate(mx, my);
+
+      // helper: draw a rounded card body of the cell, clipped to either the top or bottom half.
+      const cardBody = (fill) => { roundRect(ctx, cx - cw / 2, cyTop, cw, ch, rad); ctx.fillStyle = fill; ctx.fill(); };
+      const clipHalf = (top) => { ctx.beginPath(); if (top) ctx.rect(cx - cw, cyTop - 2, cw * 2, half + 2); else ctx.rect(cx - cw, mid, cw * 2, half + 2); ctx.clip(); };
+      const glyph = (cardCh, fill) => { ctx.fillStyle = fill; ctx.fillText(cardCh, cx, mid); };
+
+      const bodyFill = rgba(tintWarm, 1);
+      const inkFill = rgba(mix(inkC, tintWarm, wearA * 0.12 * rng.hash(i + 23, 29)), 1);
+
+      // 1) BOTTOM leaf = the lower half of the NEXT card (already settling in beneath) once we're mid-flip,
+      //    else the current card's bottom. Drawn first; the folding top leaf sweeps over it.
+      ctx.save(); clipHalf(false);
+      cardBody(bodyFill);
+      glyph(flipping ? nextCh : curCh, inkFill);
+      ctx.restore();
+
+      // 2) STATIC top leaf = the top half of the CURRENT card, before the fold lifts it. While flipping the
+      //    *next* card's top is revealed behind the falling leaf, so draw it here (it sits under the leaf).
+      ctx.save(); clipHalf(true);
+      cardBody(bodyFill);
+      glyph(flipping ? nextCh : curCh, inkFill);
+      ctx.restore();
+
+      // 3) FOLDING leaf: the current card's TOP half rotates down about the seam (90°→ flat). We fake the
+      //    3D fold by vertically scaling the top half toward the seam, plus a brightness ramp + motion blur.
+      if (flipping) {
+        const e = restAng ? 0 : frac;                 // 0 (upright) → 1 (flat at seam)
+        const sweep = Math.min(1, e);
+        const sc = Math.cos(sweep * Math.PI / 2);     // 1 → 0 vertical foreshorten of the falling leaf
+        const fast = flipMs <= 60 ? 1 : 0;            // motion-blur the fast presets
+        const shade = 0.35 + 0.65 * sc;               // leaf darkens as it tilts edge-on to ambient light
+        ctx.save();
+        ctx.translate(cx, mid);
+        ctx.scale(1, Math.max(0.001, sc));            // foreshorten about the seam
+        ctx.translate(-cx, -mid);
+        ctx.save(); clipHalf(true);
+        cardBody(rgba(mix(tintWarm, bgC, 1 - shade), 1));
+        glyph(curCh, rgba(mix(inkC, bgC, 1 - shade), 1));
+        ctx.restore();
+        // a soft motion-blur ghost of the leaf one beat behind, on the quick presets only.
+        if (fast && sc > 0.2) {
+          ctx.globalAlpha = 0.18;
+          ctx.save(); clipHalf(true); cardBody(rgba(mix(tintWarm, bgC, 0.4), 1)); ctx.restore();
+          ctx.globalAlpha = 1;
+        }
+        ctx.restore();
+      }
+
+      // 4) settle bounce: nudge the seated top leaf with the decaying overshoot angle (tiny vertical squash).
+      if (restAng) {
+        ctx.save();
+        ctx.translate(cx, mid); ctx.scale(1, Math.max(0.9, 1 - Math.abs(restAng))); ctx.translate(-cx, -mid);
+        ctx.save(); clipHalf(true); cardBody(bodyFill); glyph(curCh, inkFill); ctx.restore();
+        ctx.restore();
+      }
+
+      // 5) seam: the dark horizontal split line + a faint shadow the top leaf casts onto the bottom.
+      ctx.fillStyle = rgba([0, 0, 0], 0.55 * seamA);
+      ctx.fillRect(cx - cw / 2, mid - Math.max(1, ch * 0.012), cw, Math.max(1.5, ch * 0.024));
+      if (seamA > 0) {
+        const sg = ctx.createLinearGradient(0, mid, 0, mid + ch * 0.14);
+        sg.addColorStop(0, rgba([0, 0, 0], 0.30 * seamA));
+        sg.addColorStop(1, rgba([0, 0, 0], 0));
+        ctx.save(); clipHalf(false); ctx.fillStyle = sg; ctx.fillRect(cx - cw / 2, mid, cw, ch * 0.16); ctx.restore();
+      }
+
+      // 6) card edge: thin worn outline + a top sheen so the stock reads as physical, ambient-lit.
+      roundRect(ctx, cx - cw / 2, cyTop, cw, ch, rad);
+      ctx.lineWidth = Math.max(0.5, cw * 0.01);
+      ctx.strokeStyle = rgba(mix(tintWarm, [0, 0, 0], 0.5), 0.4 + wearA * 0.3 * rng.hash(i + 41, 43));
+      ctx.stroke();
+      const sheen = ctx.createLinearGradient(0, cyTop, 0, cyTop + ch * 0.4);
+      sheen.addColorStop(0, rgba([255, 255, 255], 0.10));
+      sheen.addColorStop(1, rgba([255, 255, 255], 0));
+      ctx.save(); roundRect(ctx, cx - cw / 2, cyTop, cw, ch, rad); ctx.clip();
+      ctx.fillStyle = sheen; ctx.fillRect(cx - cw / 2, cyTop, cw, ch * 0.4); ctx.restore();
+
+      ctx.restore();
+    }
+
+    // settled dust over the whole board (stable per seed; never a full-canvas opaque paint).
+    dust(ctx, rng, p.dust / 50, w, h);
+  },
+};
+
+// rounded-rectangle path helper (kept at module scope so the offline exporter inlines it).
+function roundRect(ctx, x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+(function () {
+  var P = {"seed":936869713,"text":"99","source":"text","card":"#141210","ink":"#f3efe6","bg":"#0c0b0a","flipMs":70,"cascade":16,"stagger":40,"bounce":46,"holdMs":2600,"gap":12,"radius":9,"seam":52,"wear":34,"misalign":28,"sticky":14,"dust":30};
+  var cv = document.getElementById('s'), ctx = cv.getContext('2d');
+  function size() {
+    var r = cv.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr);
+    cv._dpr = dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', size); size();
+  function frame(t) {
+    ctx.setTransform(cv._dpr, 0, 0, cv._dpr, 0, 0);
+    __MOD__.render(ctx, P, t, makeRng(P.seed));
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body></html>

@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>PazoruKore — offline</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #08080a; color: #c9c6c0;
+      font-family: ui-monospace, "JetBrains Mono", monospace; display: grid; place-items: center; text-align: center; }
+    .wrap { padding: 24px; }
+    .logo { font-family: "Noto Sans JP", sans-serif; font-size: 64px; color: #00e5d0;
+      text-shadow: 0 0 26px rgba(0,229,208,0.55); }
+    h1 { font-family: Georgia, serif; font-weight: 500; font-size: 26px; margin: 8px 0 6px; }
+    p { color: #6b6862; font-size: 13px; line-height: 1.6; max-width: 280px; margin: 0 auto; }
+    button { margin-top: 18px; padding: 10px 18px; border-radius: 10px; cursor: pointer;
+      background: #101014; color: #00e5d0; border: 1px solid #00e5d0; font-family: inherit; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="logo">パ</div>
+    <h1>Offline</h1>
+    <p>PazoruKore can't reach the network right now. Once you've loaded it online, it works offline — reconnect or retry.</p>
+    <button onclick="location.reload()">Retry</button>
+  </div>
+</body>
+</html>

@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lixie Tube — dexipurei standalone</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Noto+Sans+JP:wght@500&display=swap" rel="stylesheet">
+<style>
+  html,body{margin:0;height:100%;background:#08080a;color:#8b8780;
+    font:13px/1.5 "JetBrains Mono",ui-monospace,monospace;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:14px;min-height:100%}
+  .bezel{padding:20px;border-radius:14px;background:linear-gradient(145deg,#121216,#070708);
+    box-shadow:inset 0 1px 0 #2a2a32,inset 0 0 0 1px #000,0 24px 60px -20px #000}
+  canvas{display:block;width:min(720px,92vw);height:min(340px,46vw);border-radius:6px}
+  .cap{font-size:11px;letter-spacing:.3px;color:#6b6862;text-align:center;padding:0 12px}
+  .cap b{color:#00e5d0;font-weight:500}
+</style></head>
+<body>
+  <div class="bezel"><canvas id="s"></canvas></div>
+  <div class="cap"><b>Lixie Tube</b> · seed 1 · dexipurei-galore standalone · runs offline, zero deps</div>
+<script>
+"use strict";
+// --- core/rng.js ---
+// rng.js — the single seeded PRNG + spatial hash. ALL randomness in the library flows through here,
+// so one `seed` number re-rolls every module's wear identically-reproducibly.
+
+function mulberry32(a) {
+  a = a >>> 0;
+  return function () {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Stable per-element hash → [0,1). Same (x, y, seed) ALWAYS yields the same value, so wear stays
+// pinned to a pixel/segment across frames and re-renders.
+function hash(x, y, seed = 0) {
+  let n = (Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ Math.imul(seed | 0, 2147483647)) | 0;
+  n = Math.imul(n ^ (n >>> 13), 1274126177);
+  return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
+}
+
+// The helper object handed to every render(ctx, p, t, rng).
+//   rng.rand()      → next value of a seeded stream (use for things that may change frame-to-frame)
+//   rng.hash(x, y)  → stable value for element (x, y) under this seed (use for fixed wear)
+function makeRng(seed) {
+  const s = (seed >>> 0) || 0;
+  const rand = mulberry32(s);
+  return { seed: s, rand, hash: (x, y) => hash(x, y, s) };
+}
+
+
+// --- core/color.js ---
+// color.js — sRGB helpers + OKLCH passthrough. Modern canvas/CSS parse oklch() natively, so for
+// perceptual derivation we just emit the string and let the engine do the conversion.
+
+function hex2rgb(h) {
+  h = String(h).replace('#', '');
+  if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+}
+
+function rgb2hex(c) {
+  return '#' + c.map((v) => Math.max(0, Math.min(255, v | 0)).toString(16).padStart(2, '0')).join('');
+}
+
+// linear sRGB interpolation. t in [0,1].
+const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+
+const rgba = (c, a) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`;
+
+// OKLCH string for mixing/derivation where perceptual uniformity matters.
+//   l: 0..1 lightness · c: 0..~0.4 chroma · h: 0..360 hue · a: 0..1 alpha
+const oklch = (l, c, h, a = 1) => `oklch(${l} ${c} ${h}${a < 1 ? ` / ${a}` : ''})`;
+
+
+// --- core/contract.js ---
+// contract.js — the ONE interface every display module implements, plus param resolution and the
+// stage-size helper. controls.js and exporter.js read only this shape, so they stay generic.
+
+/** @typedef {'emissive'|'reflective'|'electromechanical'|'volumetric'|'aerial'} Category */
+/**
+ * @typedef {Object} Param
+ * @property {string} key
+ * @property {string} label
+ * @property {'range'|'color'|'toggle'|'select'|'text'} type
+ * @property {number} [min] @property {number} [max] @property {number} [step]
+ * @property {string[]} [options]   // for type 'select'
+ * @property {*} default
+ * @property {string} [group]       // controls panel groups by this
+ */
+/**
+ * @typedef {Object} Display
+ * @property {string} id            // MUST equal the filename stem (e.g. 'dotmatrix' → displays/dotmatrix.js)
+ * @property {string} name
+ * @property {Category} category
+ * @property {string} physics       // one-line note on the real emission/reflection/motion
+ * @property {string[]} USES        // core helper names the standalone export should inline (documentary in V1)
+ * @property {Param[]} params
+ * @property {Object<string,Object>} [presets]   // named partial param bundles
+ * @property {(canvas:HTMLCanvasElement)=>any} [init]
+ * @property {(ctx:CanvasRenderingContext2D, p:Object, t:number, rng:{seed:number,rand:()=>number,hash:(x:number,y:number)=>number})=>void} render
+ * @property {()=>void} [dispose]
+ */
+
+/* ============================================================================
+   RENDER CONTRACT — read this before adding a module
+   ----------------------------------------------------------------------------
+   • The APP sizes ctx.canvas (dpr-aware backing store) and applies the dpr transform BEFORE
+     calling render. Read your logical drawing area from stageSize(ctx) → { w, h, dpr }, then
+     draw within [0,w] × [0,h]. Do NOT resize the canvas yourself — center/scale your content
+     into the stage so every module (and the landing mini-previews) share one frame size.
+   • Paint your own background (fill the stage) — the app does not clear for you. BUT guard the opaque
+     full-canvas backdrop (and any bespoke full-canvas wash/tint YOU draw) behind `if (!p.transparent)`:
+     when p.transparent is true (set only during PNG export) skip them so the export keeps alpha. Off
+     elements may still use the bg color for compositing — only full-canvas paints are suppressed. The
+     shared overlays vignette/scanlines/ambientGradient (fx) and grain (wear) already self-suppress via
+     ctx.canvas._transparent, so you do NOT guard those — only your own module-authored full-canvas fills.
+   • render is a pure function of (ctx, p, t, rng):
+       - route ALL wear/variance/dead-element decisions through rng.hash(x, y) so a seed re-roll
+         is reproducible. Use rng.rand() only for things meant to shimmer frame-to-frame.
+       - animation may use t (ms). Do not read Date.now()/Math.random() for reproducible state.
+   • p carries p.seed plus every param key (resolved from defaults + overrides). presets are
+     partial bundles merged over defaults.
+   • Reference only your own file-scope helpers and the core utils you `import` and name in USES.
+     (The standalone exporter inlines the core utils + your module source so the file runs offline.)
+   ============================================================================ */
+
+function stageSize(ctx) {
+  const cv = ctx.canvas;
+  const dpr = cv._dpr || 1;
+  return { w: cv.width / dpr, h: cv.height / dpr, dpr };
+}
+
+// Build a fully-resolved params object from a module's schema + optional overrides. Always includes seed.
+function resolveParams(mod, overrides = {}) {
+  const p = { seed: 1 };
+  for (const param of mod.params) p[param.key] = param.default;
+  return Object.assign(p, overrides);
+}
+
+
+// --- core/text-raster.js ---
+// text-raster.js — turn any string into a lit/unlit grid.
+//   ASCII (0-9, A-Z, punctuation) → crisp built-in 5×7 font.
+//   Anything else (日本語, kana, emoji, accented latin) → rasterize a web font and sample to a grid.
+// Results are cached by (str, height, mode) so we don't re-rasterize every animation frame.
+
+// 5×7 dot-matrix font — rows top→bottom, '1' = lit. (From the reference dot-matrix module.)
+const F = {
+  '0': ['01110', '10001', '10011', '10101', '11001', '10001', '01110'],
+  '1': ['00100', '01100', '00100', '00100', '00100', '00100', '01110'],
+  '2': ['01110', '10001', '00001', '00010', '00100', '01000', '11111'],
+  '3': ['11111', '00010', '00100', '00010', '00001', '10001', '01110'],
+  '4': ['00010', '00110', '01010', '10010', '11111', '00010', '00010'],
+  '5': ['11111', '10000', '11110', '00001', '00001', '10001', '01110'],
+  '6': ['00110', '01000', '10000', '11110', '10001', '10001', '01110'],
+  '7': ['11111', '00001', '00010', '00100', '01000', '01000', '01000'],
+  '8': ['01110', '10001', '10001', '01110', '10001', '10001', '01110'],
+  '9': ['01110', '10001', '10001', '01111', '00001', '00010', '01100'],
+  ':': ['00000', '00100', '00100', '00000', '00100', '00100', '00000'],
+  '.': ['00000', '00000', '00000', '00000', '00000', '00000', '00100'],
+  ',': ['00000', '00000', '00000', '00000', '00100', '00100', '01000'],
+  '-': ['00000', '00000', '00000', '11111', '00000', '00000', '00000'],
+  '+': ['00000', '00100', '00100', '11111', '00100', '00100', '00000'],
+  '/': ['00001', '00010', '00010', '00100', '01000', '01000', '10000'],
+  '?': ['01110', '10001', '00001', '00010', '00100', '00000', '00100'],
+  '!': ['00100', '00100', '00100', '00100', '00100', '00000', '00100'],
+  '°': ['01100', '10010', '01100', '00000', '00000', '00000', '00000'],
+  ' ': ['00000', '00000', '00000', '00000', '00000', '00000', '00000'],
+  'A': ['01110', '10001', '10001', '11111', '10001', '10001', '10001'],
+  'B': ['11110', '10001', '10001', '11110', '10001', '10001', '11110'],
+  'C': ['01110', '10001', '10000', '10000', '10000', '10001', '01110'],
+  'D': ['11100', '10010', '10001', '10001', '10001', '10010', '11100'],
+  'E': ['11111', '10000', '10000', '11110', '10000', '10000', '11111'],
+  'F': ['11111', '10000', '10000', '11110', '10000', '10000', '10000'],
+  'G': ['01110', '10001', '10000', '10111', '10001', '10001', '01111'],
+  'H': ['10001', '10001', '10001', '11111', '10001', '10001', '10001'],
+  'I': ['01110', '00100', '00100', '00100', '00100', '00100', '01110'],
+  'J': ['00111', '00010', '00010', '00010', '00010', '10010', '01100'],
+  'K': ['10001', '10010', '10100', '11000', '10100', '10010', '10001'],
+  'L': ['10000', '10000', '10000', '10000', '10000', '10000', '11111'],
+  'M': ['10001', '11011', '10101', '10101', '10001', '10001', '10001'],
+  'N': ['10001', '11001', '10101', '10011', '10001', '10001', '10001'],
+  'O': ['01110', '10001', '10001', '10001', '10001', '10001', '01110'],
+  'P': ['11110', '10001', '10001', '11110', '10000', '10000', '10000'],
+  'Q': ['01110', '10001', '10001', '10001', '10101', '10010', '01101'],
+  'R': ['11110', '10001', '10001', '11110', '10100', '10010', '10001'],
+  'S': ['01111', '10000', '10000', '01110', '00001', '00001', '11110'],
+  'T': ['11111', '00100', '00100', '00100', '00100', '00100', '00100'],
+  'U': ['10001', '10001', '10001', '10001', '10001', '10001', '01110'],
+  'V': ['10001', '10001', '10001', '10001', '10001', '01010', '00100'],
+  'W': ['10001', '10001', '10001', '10101', '10101', '11011', '10001'],
+  'X': ['10001', '10001', '01010', '00100', '01010', '10001', '10001'],
+  'Y': ['10001', '10001', '01010', '00100', '00100', '00100', '00100'],
+  'Z': ['11111', '00001', '00010', '00100', '01000', '10000', '11111'],
+};
+const GW = 5, GH = 7, GAP = 1;
+
+const _cache = new Map();
+const inBuiltin = (str) => [...str].every((c) => F[c] || F[c.toUpperCase()]);
+
+function builtinGrid(str) {
+  const glyphs = [...str].map((c) => F[c] || F[c.toUpperCase()] || F['?']);
+  const cols = glyphs.length ? glyphs.length * GW + (glyphs.length - 1) * GAP : GW;
+  const grid = [];
+  for (let r = 0; r < GH; r++) {
+    const line = [];
+    glyphs.forEach((g, gi) => {
+      for (let c = 0; c < GW; c++) line.push(g[r][c] === '1' ? 1 : 0);
+      if (gi < glyphs.length - 1) line.push(0);
+    });
+    grid.push(line);
+  }
+  return { grid, rows: GH, cols };
+}
+
+let _trCanvas = null;
+// Rasterize arbitrary text (incl. Japanese) into a grid roughly `height` rows tall.
+function rasterGrid(str, height) {
+  const h = Math.max(7, height | 0);
+  if (!_trCanvas) _trCanvas = document.createElement('canvas');
+  const ctx = _trCanvas.getContext('2d');
+  const font = `600 ${h}px "Noto Sans JP","Hiragino Sans","Yu Gothic",sans-serif`;
+  ctx.font = font;
+  const w = Math.max(1, Math.ceil(ctx.measureText(str).width) + 2);
+  const ch = Math.ceil(h * 1.32);
+  _trCanvas.width = w; _trCanvas.height = ch;
+  const c2 = _trCanvas.getContext('2d');
+  c2.clearRect(0, 0, w, ch);
+  c2.fillStyle = '#fff'; c2.textBaseline = 'top'; c2.font = font;
+  c2.fillText(str, 1, Math.floor(h * 0.12));
+  const data = c2.getImageData(0, 0, w, ch).data;
+  let grid = [];
+  for (let y = 0; y < ch; y++) {
+    const line = [];
+    for (let x = 0; x < w; x++) line.push(data[(y * w + x) * 4 + 3] > 90 ? 1 : 0);
+    grid.push(line);
+  }
+  return trim({ grid, rows: ch, cols: w });
+}
+
+// drop fully-empty border rows/cols so the glyph block sits flush (keeps interior spacing)
+function trim(g) {
+  let top = 0, bot = g.rows - 1, left = 0, right = g.cols - 1;
+  const rowEmpty = (r) => g.grid[r].every((v) => !v);
+  const colEmpty = (c) => g.grid.every((row) => !row[c]);
+  while (top < bot && rowEmpty(top)) top++;
+  while (bot > top && rowEmpty(bot)) bot--;
+  while (left < right && colEmpty(left)) left++;
+  while (right > left && colEmpty(right)) right--;
+  const grid = [];
+  for (let r = top; r <= bot; r++) grid.push(g.grid[r].slice(left, right + 1));
+  return { grid, rows: grid.length, cols: grid[0] ? grid[0].length : 1 };
+}
+
+/**
+ * textGrid(str, opts) → { grid:number[][], rows, cols }
+ *   opts.mode: 'auto' (default) | 'ascii' | 'raster'
+ *   opts.height: target rows for rasterized (non-ASCII) text (default 9)
+ */
+function textGrid(str, opts = {}) {
+  const mode = opts.mode || 'auto';
+  const height = opts.height || 9;
+  const key = mode + '|' + height + '|' + str;
+  if (_cache.has(key)) return _cache.get(key);
+  let out;
+  if (mode === 'ascii' || (mode === 'auto' && inBuiltin(str))) out = builtinGrid(str);
+  else out = rasterGrid(str, height);
+  if (_cache.size > 256) _cache.clear();
+  _cache.set(key, out);
+  return out;
+}
+
+
+// --- core/wear.js ---
+// wear.js — the "lived-in" vocabulary. Reuse these instead of re-implementing wear per module.
+// Every function is deterministic in the seed via rng.hash, so wear is reproducible.
+// rng = { seed, rand, hash(x, y) } (from rng.js makeRng).
+
+// per-element brightness multiplier in [1 - amount, 1]
+function vary(rng, x, y, amount) {
+  return 1 - amount * rng.hash(x, y);
+}
+
+// is element (x, y) a weak/dying one, at probability prob (0..1)?
+function isWeak(rng, x, y, prob) {
+  return rng.hash(x + 31, y + 17) < prob;
+}
+
+// scatter faint dust specks across the panel (light + dark flecks)
+function dust(ctx, rng, density, w, h) {
+  if (density <= 0) return;
+  const n = Math.floor(density * (w * h) / 1400);
+  ctx.save();
+  for (let i = 0; i < n; i++) {
+    const x = rng.hash(i + 1, 7) * w, y = rng.hash(i + 3, 11) * h, r = 0.4 + rng.hash(i + 5, 13) * 1.4;
+    const light = rng.hash(i, 9) > 0.5;
+    ctx.fillStyle = `rgba(${light ? '255,255,255' : '0,0,0'},${0.04 + rng.hash(i + 2, 4) * 0.06})`;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// thin hairline scratches
+function scratches(ctx, rng, count, w, h) {
+  if (count <= 0) return;
+  ctx.save(); ctx.lineWidth = 0.6;
+  for (let i = 0; i < count; i++) {
+    const x = rng.hash(i + 1, 21) * w, y = rng.hash(i + 2, 23) * h;
+    const a = rng.hash(i + 3, 25) * Math.PI, len = 8 + rng.hash(i + 4, 27) * 40;
+    ctx.strokeStyle = `rgba(255,255,255,${0.03 + rng.hash(i + 5, 29) * 0.05})`;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// fine luminance grain over the whole frame (cheap; coarsened by `step`)
+function grain(ctx, rng, strength, w, h) {
+  if (ctx.canvas._transparent || strength <= 0) return;   // full-canvas texture — skip for transparent PNG export
+  const step = 3, a = strength * 0.08;
+  ctx.save();
+  for (let y = 0; y < h; y += step) {
+    for (let x = 0; x < w; x += step) {
+      const v = rng.hash((x * 0.5) | 0, ((y * 7) | 0) + ((x * 13) | 0));
+      if (v > 0.6) { ctx.fillStyle = `rgba(${v > 0.8 ? '255,255,255' : '0,0,0'},${a * v})`; ctx.fillRect(x, y, step, step); }
+    }
+  }
+  ctx.restore();
+}
+
+
+// --- core/fx.js ---
+// fx.js — optical post-processing shared across modules.
+// bloom renders a bright pass to an offscreen canvas, blurs it, and composites additively.
+
+let _fxScratch = null;
+function fxScratchCanvas(w, h) {
+  if (!_fxScratch) _fxScratch = document.createElement('canvas');
+  if (_fxScratch.width !== w || _fxScratch.height !== h) { _fxScratch.width = w; _fxScratch.height = h; }
+  return _fxScratch;
+}
+
+// drawFn(g) paints the glow source in the SAME logical coords as ctx; we then blur + add it.
+function bloom(ctx, drawFn, blur, intensity) {
+  if (intensity <= 0 || blur <= 0) return;
+  const cv = ctx.canvas, off = fxScratchCanvas(cv.width, cv.height), g = off.getContext('2d');
+  g.setTransform(ctx.getTransform());
+  g.clearRect(0, 0, cv.width, cv.height);
+  drawFn(g);
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = intensity;
+  ctx.filter = `blur(${blur}px)`;
+  ctx.drawImage(off, 0, 0);
+  ctx.restore();
+  ctx.filter = 'none';
+}
+
+function vignette(ctx, w, h, amount) {
+  if (ctx.canvas._transparent || amount <= 0) return;   // full-canvas darken — skip for transparent PNG export
+  const g = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.25, w / 2, h / 2, Math.max(w, h) * 0.62);
+  g.addColorStop(0, 'rgba(0,0,0,0)');
+  g.addColorStop(1, `rgba(0,0,0,${amount * 0.85})`);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+}
+
+function scanlines(ctx, w, h, opts) {
+  const { gap = 3, alpha = 0.12 } = opts || {};
+  if (ctx.canvas._transparent || alpha <= 0) return;
+  ctx.save(); ctx.fillStyle = `rgba(0,0,0,${alpha})`;
+  for (let y = 0; y < h; y += gap) ctx.fillRect(0, y, w, 1);
+  ctx.restore();
+}
+
+// ambient light gradient for REFLECTIVE panels (flip-dot, e-ink) — lit, not emissive. angle radians.
+function ambientGradient(ctx, w, h, angle, falloff) {
+  if (ctx.canvas._transparent) return;
+  const dx = Math.cos(angle), dy = Math.sin(angle);
+  const g = ctx.createLinearGradient(w / 2 - dx * w, h / 2 - dy * h, w / 2 + dx * w, h / 2 + dy * h);
+  g.addColorStop(0, `rgba(255,255,255,${0.14 * (1 - falloff)})`);
+  g.addColorStop(0.5, 'rgba(255,255,255,0)');
+  g.addColorStop(1, `rgba(0,0,0,${0.22 * (1 - falloff)})`);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+}
+
+// cheap chromatic edge: redraw the canvas shifted in R/B. px = offset in logical px.
+function chromaticOffset(ctx, w, h, px) {
+  if (!px) return;
+  const cv = ctx.canvas;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = 0.22;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  const dpr = cv._dpr || 1;
+  ctx.drawImage(cv, px * dpr, 0);
+  ctx.drawImage(cv, -px * dpr, 0);
+  ctx.restore();
+}
+
+// --- displays/lixie.js ---
+// lixie.js — Lixie Tube (emissive). HANDOVER §6.08. Edge-lit engraved acrylic: per digit position there
+// are EXACTLY 10 stacked transparent panels, each etched with one numeral 0-9 and lit edge-on. The active
+// numeral's etched lines scatter the edge-LED light and the glyph appears to float inside the stack; the
+// other nine are faint ALWAYS-VISIBLE ghosts — all ten overlap, and that layered overlap IS the signature
+// look. Deeper panels are pushed back/down (Z/parallax). Edge-LEDs bleed colour along the panel borders.
+// Wear (rng.hash): dust + scratches on the panels, uneven per-layer LED brightness, a slight chromatic edge.
+
+
+// Etch each numeral with a thin condensed font so the engraved lines read like scattered light, not paint.
+const ETCH_FONT = "'Cormorant Garamond', 'JetBrains Mono', serif";
+// Physical panel stacking order (front-to-back) — NOT numeric, so neighbouring digits don't line up and the
+// overlap stays believable. Earlier = closer to the viewer (drawn last, least parallax push).
+const PANEL_ORDER = [4, 7, 1, 9, 2, 6, 0, 8, 3, 5];
+const LAYERS = 10; // EXACTLY ten panels per digit — the whole point of a Lixie.
+
+// digit string from text or a live clock
+function content(p) {
+  if (p.source === 'clock') {
+    const d = new Date(), z = (n) => String(n).padStart(2, '0');
+    return z(d.getHours()) + ':' + z(d.getMinutes());
+  }
+  return (p.text || ' ').toString();
+}
+
+const __MOD__ = {
+  id: 'lixie',
+  name: 'Lixie Tube',
+  category: 'emissive',
+  physics: 'Edge-lit engraved acrylic: ten stacked transparent panels, each etched with one numeral 0-9; the energized panel\'s etched lines scatter edge-LED light so the active glyph floats in the stack while nine faint ghosts always overlap.',
+  USES: ['stageSize', 'bloom', 'vignette', 'hex2rgb', 'mix', 'rgba', 'dust', 'scratches'],
+  params: [
+    { key: 'text', label: 'text', type: 'text', max: 12, default: '1971', group: 'content' },
+    { key: 'source', label: 'source', type: 'select', options: ['text', 'clock'], default: 'text', group: 'content' },
+    { key: 'color', label: 'glow', type: 'color', default: '#36d6ff', group: 'color' },
+    { key: 'bg', label: 'background', type: 'color', default: '#04080c', group: 'color' },
+    { key: 'edgeColor', label: 'edge LED', type: 'color', default: '#1a8cff', group: 'color' },
+    { key: 'glow', label: 'glow radius', type: 'range', min: 0, max: 50, step: 1, default: 20, group: 'glow' },
+    { key: 'bloomInt', label: 'bloom', type: 'range', min: 0, max: 100, step: 1, default: 58, group: 'glow' },
+    { key: 'coreWhite', label: 'hot core', type: 'range', min: 0, max: 100, step: 1, default: 34, group: 'glow' },
+    { key: 'etchW', label: 'etch width', type: 'range', min: 4, max: 26, step: 1, default: 12, group: 'stack' },
+    { key: 'offset', label: 'layer offset', type: 'range', min: 0, max: 100, step: 1, default: 46, group: 'stack' },
+    { key: 'ghost', label: 'ghost panels', type: 'range', min: 0, max: 100, step: 1, default: 30, group: 'stack' },
+    { key: 'edgeBleed', label: 'edge bleed', type: 'range', min: 0, max: 100, step: 1, default: 44, group: 'stack' },
+    { key: 'ledVary', label: 'LED variance', type: 'range', min: 0, max: 100, step: 1, default: 30, group: 'wear' },
+    { key: 'chroma', label: 'chromatic', type: 'range', min: 0, max: 100, step: 1, default: 24, group: 'wear' },
+    { key: 'dust', label: 'dust', type: 'range', min: 0, max: 100, step: 1, default: 26, group: 'wear' },
+    { key: 'scratch', label: 'scratches', type: 'range', min: 0, max: 40, step: 1, default: 10, group: 'wear' },
+    { key: 'vignette', label: 'vignette', type: 'range', min: 0, max: 100, step: 1, default: 48, group: 'wear' },
+  ],
+  presets: {
+    'B-7971': { color: '#36d6ff', bg: '#04080c', edgeColor: '#1a8cff', glow: 20, bloomInt: 58, coreWhite: 34, etchW: 12, offset: 46, ghost: 30, edgeBleed: 44, ledVary: 30, chroma: 24, dust: 26, scratch: 10, vignette: 48 },
+    Pristine: { color: '#7fe8ff', bg: '#03060a', edgeColor: '#2aa0ff', glow: 16, bloomInt: 44, coreWhite: 26, etchW: 9, offset: 34, ghost: 16, edgeBleed: 30, ledVary: 8, chroma: 8, dust: 6, scratch: 2, vignette: 30 },
+    Amberglass: { color: '#ffc24a', bg: '#0a0702', edgeColor: '#ff8a1a', glow: 24, bloomInt: 66, coreWhite: 20, etchW: 14, offset: 56, ghost: 40, edgeBleed: 58, ledVary: 36, chroma: 30, dust: 34, scratch: 16, vignette: 54 },
+    Foggy: { color: '#9affd0', bg: '#040a08', edgeColor: '#2affb0', glow: 30, bloomInt: 78, coreWhite: 14, etchW: 18, offset: 70, ghost: 56, edgeBleed: 70, ledVary: 48, chroma: 42, dust: 52, scratch: 26, vignette: 62 },
+  },
+
+  render(ctx, p, t, rng) {
+    const { w, h } = stageSize(ctx);
+    const glowC = hex2rgb(p.color), bg = hex2rgb(p.bg), edgeC = hex2rgb(p.edgeColor);
+    const coreC = mix(glowC, [255, 255, 255], p.coreWhite / 100);
+    if (!p.transparent) { ctx.fillStyle = rgba(bg, 1); ctx.fillRect(0, 0, w, h); }
+
+    const str = content(p);
+    const n = str.length;
+    const pad = Math.min(w, h) * 0.13;
+
+    // size each digit cell to fit the stage (acrylic block aspect ~ 0.66 wide : 1 tall)
+    const aspect = 0.66, gapFrac = 0.3;
+    let dh = h - pad * 2, dw = dh * aspect, gp = dw * gapFrac;
+    const maxW = w - pad * 2, total = (k) => dw * k + gp * (k - 1);
+    if (total(n) > maxW) { const s = maxW / total(n); dw *= s; dh *= s; gp = dw * gapFrac; }
+    const fontPx = dh * 0.74;
+    const startX = (w - total(n)) / 2, y = h / 2;
+
+    // parallax push per stack layer: deeper panels sink down & back-right, fanning the etched ghosts.
+    const push = (p.offset / 100) * fontPx * 0.085;
+    const ghostA = p.ghost / 100, ledV = p.ledVary / 100, chroma = (p.chroma / 100) * fontPx * 0.012;
+    const etchPx = Math.max(1, fontPx * (p.etchW / 1000)); // etch-line width tracks the slider + font scale
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    // draw one etched numeral as a thin stroked + faintly filled glyph at (gx,gy)
+    const etch = (g, ch, gx, gy, stroke, fill, lw) => {
+      g.font = `${fontPx}px ${ETCH_FONT}`;
+      g.lineWidth = lw; g.lineJoin = 'round';
+      if (fill) { g.fillStyle = fill; g.fillText(ch, gx, gy); }
+      if (stroke) { g.strokeStyle = stroke; g.strokeText(ch, gx, gy); }
+    };
+
+    const lit = []; // active glyphs collected for one additive bloom pass at the end
+
+    for (let i = 0; i < n; i++) {
+      const ch = str[i];
+      const cx = startX + dw * (i + 0.5) + gp * i;
+
+      // clock colon — two small edge-lit dots, not a panel stack
+      if (ch === ':' || ch === ' ') {
+        if (ch === ':') {
+          for (const dy of [-fontPx * 0.2, fontPx * 0.2]) {
+            ctx.save(); ctx.globalCompositeOperation = 'lighter';
+            ctx.fillStyle = rgba(glowC, 0.85); ctx.shadowColor = rgba(glowC, 1); ctx.shadowBlur = p.glow * 0.6;
+            ctx.beginPath(); ctx.arc(cx, y + dy, fontPx * 0.05, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+          }
+          ctx.shadowBlur = 0;
+        }
+        continue;
+      }
+
+      // per-digit edge-LED brightness is uneven (stable per seed) — some panels are lit a touch dimmer.
+      const ledB = Math.max(0.4, 1 - ledV * rng.hash(i + 5, 71));
+
+      // 1) edge-LED color bleed along the panel border: a soft frame glow behind the whole stack.
+      if (p.edgeBleed > 0) {
+        const bw = dw * 0.5, bh = dh * 0.5, bx = cx, by = y;
+        const eb = (p.edgeBleed / 100) * ledB;
+        ctx.save(); ctx.globalCompositeOperation = 'lighter';
+        // top/bottom edges glow strongest (the LEDs sit on those rails), fading inward
+        for (const side of [-1, 1]) {
+          const gy = by + side * bh;
+          const grd = ctx.createLinearGradient(bx, gy, bx, by);
+          grd.addColorStop(0, rgba(edgeC, 0.5 * eb));
+          grd.addColorStop(1, rgba(edgeC, 0));
+          ctx.fillStyle = grd; ctx.fillRect(bx - bw, Math.min(gy, by), bw * 2, bh);
+        }
+        ctx.restore();
+      }
+
+      // 2) ghost stack: ALL ten etched numerals, faint & always visible, back-to-front with Z/parallax.
+      //    deeper panels (later in PANEL_ORDER) sink down/right and dim — the fanned overlap reads as depth.
+      if (ghostA > 0) {
+        for (let s = 0; s < LAYERS; s++) {
+          const gnum = PANEL_ORDER[s];
+          if (String(gnum) === ch) continue;                 // active panel drawn bright below
+          const z = s / (LAYERS - 1);                          // 0 = closest, 1 = deepest panel
+          const dz = push * s;                                 // cumulative parallax push
+          const a = ghostA * (0.05 + 0.13 * (1 - z)) * ledB;   // nearer ghosts read slightly stronger
+          const gx = cx + dz * 0.5, gy = y + dz;
+          etch(ctx, String(gnum), gx, gy, rgba(mix(bg, glowC, 0.55), a), rgba(mix(bg, glowC, 0.32), a * 0.4), etchPx * 0.7);
+        }
+      }
+
+      // 3) active numeral: bright edge-lit etch sitting at the front layer, glow halo + hot core.
+      const bright = ledB;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      // chromatic edge: a faint red/blue split of the etch (worn acrylic refracts unevenly)
+      if (chroma > 0) {
+        etch(ctx, ch, cx - chroma, y, rgba([255, 40, 40], 0.28 * bright), null, etchPx);
+        etch(ctx, ch, cx + chroma, y, rgba([40, 80, 255], 0.28 * bright), null, etchPx);
+      }
+      // glow halo (via shadow), then the crisp etched body, then a faint hot core down the etch lines.
+      ctx.shadowColor = rgba(glowC, 1); ctx.shadowBlur = p.glow;
+      etch(ctx, ch, cx, y, rgba(glowC, 0.55 * bright), rgba(glowC, 0.12 * bright), etchPx);
+      ctx.shadowBlur = p.glow * 0.4;
+      etch(ctx, ch, cx, y, rgba(glowC, 0.9 * bright), null, etchPx * 0.85);
+      if (p.coreWhite > 0) {
+        ctx.shadowBlur = 0;
+        etch(ctx, ch, cx, y, rgba(coreC, 0.7 * bright), null, etchPx * 0.45);
+      }
+      ctx.restore();
+      ctx.shadowBlur = 0;
+
+      lit.push({ ch, x: cx, y, bright });
+    }
+
+    // 4) one soft additive bloom over all lit numerals (light scattering out of the acrylic faces)
+    bloom(ctx, (g) => {
+      g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+      g.font = `${fontPx}px ${ETCH_FONT}`;
+      for (const L of lit) {
+        g.strokeStyle = rgba(glowC, 0.9 * L.bright); g.lineWidth = etchPx;
+        g.strokeText(L.ch, L.x, L.y);
+      }
+    }, p.glow * 0.85, p.bloomInt / 100);
+
+    // 5) panel wear: dust + hairline scratches across the acrylic faces (deterministic per seed).
+    dust(ctx, rng, p.dust / 25, w, h);
+    scratches(ctx, rng, p.scratch, w, h);
+
+    vignette(ctx, w, h, p.vignette / 100);
+  },
+};
+
+(function () {
+  var P = {"seed":1,"text":"1971","source":"text","color":"#36d6ff","bg":"#04080c","edgeColor":"#1a8cff","glow":20,"bloomInt":58,"coreWhite":34,"etchW":12,"offset":46,"ghost":30,"edgeBleed":44,"ledVary":30,"chroma":24,"dust":26,"scratch":10,"vignette":48};
+  var cv = document.getElementById('s'), ctx = cv.getContext('2d');
+  function size() {
+    var r = cv.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr);
+    cv._dpr = dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', size); size();
+  function frame(t) {
+    ctx.setTransform(cv._dpr, 0, 0, cv._dpr, 0, 0);
+    __MOD__.render(ctx, P, t, makeRng(P.seed));
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body></html>

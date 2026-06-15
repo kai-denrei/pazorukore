@@ -1,0 +1,16 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+  html,body{margin:0;padding:0;background:#08080a}
+  #i{display:flex;align-items:center;justify-content:center;
+     font-family:"Noto Sans JP","Hiragino Sans","Yu Gothic",sans-serif;color:#00e5d0;font-weight:700}
+</style></head><body><div id="i">パ</div>
+<script>
+  var q=new URLSearchParams(location.search);
+  var s=+(q.get('s')||512), pad=+(q.get('pad')||0), round=+(q.get('round')||0);
+  var el=document.getElementById('i');
+  el.style.width=s+'px'; el.style.height=s+'px';
+  el.style.background='#08080a';
+  el.style.fontSize=Math.round(s*(0.6-pad))+'px';
+  el.style.borderRadius=round?Math.round(s*0.2)+'px':'0';
+  el.style.textShadow='0 0 '+Math.round(s*0.05)+'px rgba(0,229,208,0.55)';
+  document.title='icon-ready';
+</script></body></html>

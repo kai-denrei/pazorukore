@@ -1,0 +1,12 @@
+{
+  "name": "pazorukore",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A small, skinnable engine for grid-deduction puzzles. Vanilla ES modules, no build step.",
+  "scripts": {
+    "serve": "python3 scripts/serve.py 8173",
+    "test": "node --test tests/*.test.mjs",
+    "bust": "./scripts/bust.sh"
+  }
+}

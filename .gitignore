@@ -1,0 +1,11 @@
+# Deban project memory — local private working memory, not a published artifact
+.deban/
+
+# OS / editor cruft
+.DS_Store
+*.swp
+*~
+
+# Dev server / tooling
+node_modules/
+.cache/
