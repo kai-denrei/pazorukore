@@ -6,6 +6,7 @@
 import { renderVersionGlyphs } from './version-badge.js';
 import { initPWA } from './pwa.js';
 import { TimerDisplay } from './timer-display.js';
+import { ScoreKeeper } from './score.js';
 import { Engine } from '../core/engine.js';
 import { EVENTS } from '../core/events.js';
 import { negotiate } from '../core/capabilities.js';
@@ -65,7 +66,9 @@ async function mountGame(gameId, skinId, params) {
   app.game = game; app.skin = skin;
   try { app.engine.load(game, params || game.defaultParams()); }
   catch (err) { app.engine.load(game, game.defaultParams()); } // bad game-ID → fall back to a fresh puzzle
-  app.engine.on(EVENTS.solved, stopTimer);
+  app.undoUsed = false; app.scored = false;
+  app.engine.on(EVENTS.moved, ({ dir }) => { if (dir && dir !== 'do') app.undoUsed = true; });
+  app.engine.on(EVENTS.solved, onSolved);
 
   const boardEl = document.getElementById('board');
   skin.applyPalette(boardEl);
@@ -82,6 +85,7 @@ async function mountGame(gameId, skinId, params) {
   }
 
   startTimer();
+  updateUpcomingRun();
 
   // admin tuning panel reflects the active skin's glyph params
   if (app.admin) openAdmin();
@@ -285,10 +289,75 @@ function renderTimer() {
   const d = timerDisp(); if (d) d.render(mmss, _timer.stopped);
 }
 
+// ── scoring + combo callouts (timer-linked) ───────────────────────────────────
+function onSolved() {
+  stopTimer();
+  if (app.scored || !app.score) return;
+  app.scored = true;
+  const secs = (_timer.stopped ? _timer.elapsed : (performance.now() - _timer.start)) / 1000;
+  const r = app.score.record(secs, app.undoUsed);
+  updateScoreHUD(r);
+  if (r.callout) showStreak(r.callout, r.tier);
+  if (r.overlay) showPerfectOverlay(r);
+}
+
+function updateScoreHUD(r) {
+  const num = document.getElementById('score-num');
+  if (num) {
+    num.textContent = r.runTotal.toLocaleString();
+    num.classList.toggle('perfect', !!r.perfect);
+    num.classList.remove('bump'); void num.offsetWidth; num.classList.add('bump');
+  }
+  const lbl = document.getElementById('score-lbl');
+  if (lbl) lbl.textContent = r.perfect ? `+${r.points} ·×${r.mult.toFixed(1)}` : `+${r.points}`;
+  const prog = document.getElementById('run-prog');
+  if (prog) prog.innerHTML = `${Math.min(r.gameInRun, 10)}<span class="run-sep">/</span>10`;
+  const best = document.getElementById('run-best');
+  if (best) best.textContent = `★ ${(app.score.best.runScore || 0).toLocaleString()}`;
+}
+
+// reflect the game-of-run that's about to be played + the persisted best (called on each new game).
+function updateUpcomingRun() {
+  if (!app.score) return;
+  const fresh = app.score.gameInRun >= 10;
+  const n = fresh ? 1 : app.score.gameInRun + 1;
+  const prog = document.getElementById('run-prog');
+  if (prog) prog.innerHTML = `${n}<span class="run-sep">/</span>10`;
+  const num = document.getElementById('score-num');
+  if (num) { num.textContent = (fresh ? 0 : app.score.runTotal).toLocaleString(); num.classList.remove('perfect'); }
+  const lbl = document.getElementById('score-lbl'); if (lbl) lbl.textContent = 'SCORE';
+  const best = document.getElementById('run-best');
+  if (best) best.textContent = `★ ${(app.score.best.runScore || 0).toLocaleString()}`;
+}
+
+function showStreak(callout, tier) {
+  const el = document.getElementById('streak-flash'); if (!el) return;
+  el.className = 'streak-flash tier-' + Math.min(tier, 10);
+  el.textContent = callout.label;
+  el.hidden = false;
+  void el.offsetWidth;
+  el.classList.add('show');
+  clearTimeout(app._streakT);
+  app._streakT = setTimeout(() => { el.hidden = true; el.classList.remove('show'); }, 2700);
+  if (navigator.vibrate && app.haptics !== false) { try { navigator.vibrate(tier >= 3 ? [18, 28, 40] : 14); } catch (_) {} }
+}
+
+function showPerfectOverlay(r) {
+  const el = document.getElementById('perfect-overlay'); if (!el) return;
+  const title = document.getElementById('po-title'), sub = document.getElementById('po-sub');
+  if (title) title.textContent = '完璧!';
+  if (sub) sub.textContent = r.flawless ? `PĀFEKUTO RUN · 10/10 · +${r.runBonus.toLocaleString()}` : `${r.streak} PERFECT IN A ROW`;
+  el.hidden = false;
+  clearTimeout(app._overlayT);
+  app._overlayT = setTimeout(() => { el.hidden = true; }, 2800);
+  el.onclick = () => { el.hidden = true; };
+}
+
 function init() {
   const q = new URLSearchParams(location.search);
   if (q.get('game')) app.gameId = q.get('game');
   if (q.get('skin')) app.skinId = q.get('skin');
+  app.score = new ScoreKeeper();
   renderVersionGlyphs();
   initPWA();
   document.getElementById('btn-menu').onclick = openPicker;
