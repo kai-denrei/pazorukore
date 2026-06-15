@@ -194,22 +194,8 @@ function search(graph, onSolution) {
     if (!feasible()) return;
     const k = pickEdge();
     if (k === -1) {
-      // all incident-to-some-island edges decided → ensure ALL edges decided (decide leftovers as 0)
-      // Any edge not incident to a needing island is still undecided; force the remainder.
-      let firstUndecided = -1;
-      for (let kk = 0; kk < m; kk++) if (counts[kk] === -1) { firstUndecided = kk; break; }
-      if (firstUndecided !== -1) {
-        // Force this leftover edge through its values (it must be 0 since both endpoints satisfied).
-        const tryVals = crossLock[firstUndecided] > 0 ? [0] : [0, 1, 2];
-        for (const v of tryVals) {
-          const undo = setEdge(firstUndecided, v);
-          recurse();
-          undo();
-          if (stop) return;
-        }
-        return;
-      }
-      // fully decided → check sums exactly + connectivity
+      // pickEdge returns -1 only when no island has an undecided incident edge. Every edge joins two
+      // islands, so this means ALL edges are decided. Verify the exact sums + connectivity.
       for (let i = 0; i < n; i++) if (sum[i] !== need[i]) return;
       if (!connected()) return;
       if (onSolution(counts)) stop = true;

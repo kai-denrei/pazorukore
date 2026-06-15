@@ -14,7 +14,7 @@
 //      fall back to a known-good small layout so we never return a broken puzzle.
 
 import { makeGenRng } from '../../core/rng.js';
-import { countSolutions, solveAssignment, buildGraph, assignmentToBridges } from './solver.js';
+import { countSolutions } from './solver.js';
 
 const DIRS = [
   { dr: -1, dc: 0 }, // up
@@ -234,11 +234,3 @@ function knownGood(rows, cols, seed) {
   }
   return { rows, cols, islands, bridges, unique: true, attempts: 0, ms: 0, fallback: true };
 }
-
-// Re-derive a bridges object directly from islands via the solver (used as a cross-check / when a
-// layout is loaded from a desc string and we need its solution).
-export function solutionBridges(islands) {
-  return solveAssignment(islands);
-}
-
-export { buildGraph, assignmentToBridges };

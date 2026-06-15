@@ -16,7 +16,7 @@
 import { makeGrid, withCells, getCell, getCellAt, ROLES, cellId } from '../../core/grid.js';
 import { EVENTS } from '../../core/events.js';
 import { generate, presetFor } from './generator.js';
-import { buildGraph, solveAssignment, countSolutions } from './solver.js';
+import { buildGraph, solveAssignment } from './solver.js';
 
 // --- helpers --------------------------------------------------------------------------------
 
