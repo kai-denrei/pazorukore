@@ -21,9 +21,11 @@ export class BridgeDraw {
     this._down = (e) => this._onDown(e);
     this._move = (e) => this._onMove(e);
     this._up = (e) => this._onUp(e);
+    this._cancel = (e) => this._onCancel(e);
     this.el.addEventListener('pointerdown', this._down);
     window.addEventListener('pointermove', this._move);
     window.addEventListener('pointerup', this._up);
+    window.addEventListener('pointercancel', this._cancel);
     this._subs.push(this.engine.on(EVENTS.conflictDetected, () => this._vibe(35)));
     this._subs.push(this.engine.on(EVENTS.solved, () => this._vibe([20, 40, 30])));
   }
@@ -32,34 +34,43 @@ export class BridgeDraw {
     if (this.el) this.el.removeEventListener('pointerdown', this._down);
     window.removeEventListener('pointermove', this._move);
     window.removeEventListener('pointerup', this._up);
-    this._clearHighlights(); this._clearPreview();
+    window.removeEventListener('pointercancel', this._cancel);
+    this._endDrag();
     this._subs.forEach((off) => off()); this._subs = [];
   }
+
+  // single-pointer discipline: clear any in-progress drag's visuals + state. Belt-and-braces clears
+  // ALL is-bridge-* classes so an interrupted gesture can never strand a highlight ring.
+  _endDrag() {
+    this._clearHighlights();
+    this._clearPreview();
+    this._setHud('');
+    this.drag = null;
+  }
+  _onCancel(e) { if (this.drag && (!e || e.pointerId === this.drag.pointerId)) this._endDrag(); }
 
   _cellAt(e) { const el = document.elementFromPoint(e.clientX, e.clientY); const b = el && el.closest ? el.closest('.cell') : null; return b ? b.dataset.id : null; }
   _island(id) { const c = id && getCell(this.engine.current().grid, id); return (c && c.role === 'clue') ? c : null; }
   _legal(b) { return this.game.validateMove(this.engine.current(), { type: 'bridge', a: this.drag.from, b }); }
 
   _onDown(e) {
+    if (this.drag) return;                 // ignore secondary pointers while a drag is active
     const id = this._cellAt(e);
     const isl = this._island(id);
     if (!isl) return;
     e.preventDefault();
-    this.drag = { from: id, fr: { r: isl.row, c: isl.col }, sx: e.clientX, sy: e.clientY, target: null };
+    this.drag = { from: id, fr: { r: isl.row, c: isl.col }, sx: e.clientX, sy: e.clientY, target: null, pointerId: e.pointerId };
     this._setHl(id, 'from', true);
     this._vibe(6);
   }
 
-  _onMove(e) { if (this.drag) this._setTarget(this._candidate(e)); }
+  _onMove(e) { if (this.drag && e.pointerId === this.drag.pointerId) this._setTarget(this._candidate(e)); }
 
   _onUp(e) {
-    if (!this.drag) return;
+    if (!this.drag || e.pointerId !== this.drag.pointerId) return;
     const target = this._candidate(e) || this.drag.target;
     const from = this.drag.from;
-    this._setHl(from, 'from', false);
-    if (this.drag.target) this._setHl(this.drag.target, 'target', false);
-    this._clearPreview(); this._setHud('');
-    this.drag = null;
+    this._endDrag();
     if (target) { const ok = this.engine.do({ type: 'bridge', a: from, b: target }); this._vibe(ok ? 12 : 40); }
   }
 

@@ -19,9 +19,11 @@ export class RegionDraw {
     this._down = (e) => this._onDown(e);
     this._move = (e) => this._onMove(e);
     this._up = (e) => this._onUp(e);
+    this._cancel = (e) => this._onCancel(e);
     this.el.addEventListener('pointerdown', this._down);
     window.addEventListener('pointermove', this._move);
     window.addEventListener('pointerup', this._up);
+    window.addEventListener('pointercancel', this._cancel);
     this._subs.push(this.engine.on(EVENTS.regionValidated, () => this._vibe([12, 24, 40])));
     this._subs.push(this.engine.on(EVENTS.mistake, () => this._vibe(45)));
   }
@@ -30,10 +32,15 @@ export class RegionDraw {
     if (this.el) this.el.removeEventListener('pointerdown', this._down);
     window.removeEventListener('pointermove', this._move);
     window.removeEventListener('pointerup', this._up);
-    this._clearPreview();
+    window.removeEventListener('pointercancel', this._cancel);
+    this._endDrag();
     this._subs.forEach((off) => off());
     this._subs = [];
   }
+
+  // abandon any in-progress rubber-band (OS-interrupted touch / teardown) without committing.
+  _endDrag() { this._clearPreview(); this._setHud(''); this.drag = null; }
+  _onCancel(e) { if (this.drag && (!e || e.pointerId === this.drag.pointerId)) this._endDrag(); }
 
   _cellAt(e) {
     const el = document.elementFromPoint(e.clientX, e.clientY);
@@ -44,10 +51,11 @@ export class RegionDraw {
 
   // start a rubber-band from ANY cell.
   _onDown(e) {
+    if (this.drag) return;                 // ignore secondary pointers while a drag is active
     const id = this._cellAt(e);
     if (!id) return;
     e.preventDefault();
-    this.drag = { start: id, cur: id, area: -1, moved: false };
+    this.drag = { start: id, cur: id, area: -1, moved: false, pointerId: e.pointerId };
     this.engine.emit(EVENTS.regionStarted, { from: id });
     this._showPreview();
     this._update(id);
@@ -55,13 +63,13 @@ export class RegionDraw {
   }
 
   _onMove(e) {
-    if (!this.drag) return;
+    if (!this.drag || e.pointerId !== this.drag.pointerId) return;
     const id = this._cellAt(e);
     if (id) { if (id !== this.drag.start) this.drag.moved = true; this._update(id); }
   }
 
-  _onUp() {
-    if (!this.drag) return;
+  _onUp(e) {
+    if (!this.drag || (e && e.pointerId !== this.drag.pointerId)) return;
     const { start, cur, moved } = this.drag;
     const rect = this._rect(start, cur);
     this._clearPreview();
