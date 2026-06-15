@@ -4,10 +4,12 @@
 
 import { makeGlyph16 } from './glyph-16seg.js';
 import { makeRegionNeon } from './region-neon.js';
+import { makeBridgeRenderer } from '../_bridge.js';
 
 // canvas-side hex colors (the vendored renderer wants hex; hex2rgb parses these).
 const GLYPH = { on: '#1bf0c8', given: '#cdeeff', error: '#ff556b', off: '#2c4f4b', bg: '#070b0c' };
 const REGION = { grid: '#0db3a3', accent: '#00e5d0', validated: '#8affe8', fill: '#0c3a35' };
+const BRIDGE = { line: '#1bf0c8', ring: '#0db3a3', ringDone: '#8affe8', error: '#ff556b', disc: '#091013' };
 
 // OKLCH chrome/board tokens (§8.3) — set on the board root by applyPalette.
 const TOKENS = {
@@ -32,6 +34,7 @@ const TOKENS = {
 
 const glyph = makeGlyph16(GLYPH);
 const region = makeRegionNeon(REGION);
+const bridge = makeBridgeRenderer(BRIDGE, { glow: 13, core: 0.45, lineWidth: 0.075, ringWidth: 0.055 });
 
 export const futuristic = {
   meta: {
@@ -42,6 +45,7 @@ export const futuristic = {
   },
   glyph,
   region,
+  bridge,
   renderPolicy: (role) => (role === 'given' || role === 'fillable' || role === 'clue') ? 'device' : 'plain',
   applyPalette(rootEl) {
     for (const [k, v] of Object.entries(TOKENS)) rootEl.style.setProperty(k, v);

@@ -14,6 +14,7 @@ import { negotiate } from '../core/capabilities.js';
 const GAME_LOADERS = {
   sudoku: () => import('../games/sudoku/index.js'),
   shikaku: () => import('../games/shikaku/index.js'),
+  bridges: () => import('../games/bridges/index.js'),
 };
 const SKIN_LOADERS = {
   futuristic: () => import('../skins/futuristic/skin.js'),
@@ -99,6 +100,14 @@ function runDemo() {
   const eng = app.engine, inter = app.interaction;
   if (!eng || !inter) return;
 
+  // bridge-draw games: commit ~60% of the solution's bridges (proves island/bridge rendering).
+  if (app.game.meta.interaction === 'bridge-draw') {
+    const sb = eng.solution && eng.solution.bridges; if (!sb) return;
+    const edges = Object.entries(sb), take = Math.ceil(edges.length * 0.6);
+    for (let k = 0; k < take; k++) { const [key, count] = edges[k]; const [a, b] = key.split('|'); for (let i = 0; i < count; i++) eng.do({ type: 'bridge', a, b }); }
+    return;
+  }
+
   // region-draw games: commit a few correct regions straight from the solution (proves region
   // membranes + validation rendering without simulating a pointer drag).
   if (app.game.meta.interaction === 'region-draw') {
@@ -134,7 +143,9 @@ function runDemo() {
 
 async function bindInteraction(game, skin) {
   const kind = game.meta.interaction;
-  const path = kind === 'region-draw' ? '../interaction/region-draw.js' : '../interaction/digit-entry.js';
+  const path = kind === 'region-draw' ? '../interaction/region-draw.js'
+    : kind === 'bridge-draw' ? '../interaction/bridge-draw.js'
+      : '../interaction/digit-entry.js';
   const mod = await safeImport(() => import(/* @vite-ignore */ path));
   if (mod.__error) return;
   const Interaction = mod.default || Object.values(mod)[0];
@@ -242,9 +253,9 @@ function newGameWith(extra) {
 const SHIPPED_GAMES = [
   { n: 'Sudoku', i: 'digit-entry', d: 'Classic 9×9 Latin square — fill so every row, column and 3×3 box holds 1–9 with no repeats.' },
   { n: 'Shikaku', i: 'region-draw', d: 'Divide the grid into rectangles; each rectangle’s area equals the clue number it contains.' },
+  { n: 'Bridges', i: 'bridge-draw', d: 'Connect numbered islands with bridges (1 or 2 between a pair, never crossing) so each island has exactly its number of bridges and the whole network is one connected web. (Tatham’s Bridges / Hashiwokakero.)' },
 ];
 const NEXT_GAMES = [
-  { n: 'Bridges', i: 'bridge-draw', d: 'Connect numbered islands with bridges (1 or 2 between a pair, never crossing) so each island has exactly its number of bridges and the whole network is one connected web. (Tatham’s Bridges / Hashiwokakero — in progress, same skins.)' },
   { n: 'Fillomino', i: 'region-paint', d: 'Every cell holds a number; carve the grid into regions where a region of size N is filled entirely with N. The densest glyph showcase.' },
   { n: 'KenKen / Killer', i: 'digit + cages', d: 'A Latin-square base with arithmetic cages — the numbers in each cage must reach a target via +, −, × or ÷.' },
   { n: 'Slitherlink', i: 'edge-draw', d: 'Draw a single closed loop along the grid lines; each clue says how many of its four sides the loop uses. Needs a new edge-draw interaction.' },
@@ -397,6 +408,11 @@ function init() {
 // dev: drive the puzzle to its solution so the solved celebration fires (for screenshots / smoke tests).
 function solveFromSolution() {
   const eng = app.engine, g = app.game;
+  if (g.meta.interaction === 'bridge-draw') {
+    const sb = eng.solution && eng.solution.bridges; if (!sb) return;
+    for (const [key, count] of Object.entries(sb)) { const [a, b] = key.split('|'); for (let i = 0; i < count; i++) eng.do({ type: 'bridge', a, b }); }
+    return;
+  }
   const sol = eng.solution && eng.solution.grid ? eng.solution.grid : null;
   if (!sol) return;
   if (g.meta.interaction === 'digit-entry') {

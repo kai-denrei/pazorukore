@@ -107,7 +107,7 @@ export function makeRegionNeon(palette) {
       if (!first) return;
       const xs = boundaries(geom, 'x'), ys = boundaries(geom, 'y');
       const box = geom.box || (geom.rows % 3 === 0 ? 3 : 0);
-      const sudoku = geom.game === 'sudoku', shikaku = geom.game === 'shikaku';
+      const sudoku = geom.game === 'sudoku', shikaku = geom.game === 'shikaku' || geom.game === 'bridges';
       const TH = Math.max(1.5, first.w * (p.thickness / 100));
       const ins = TH;                       // notch inset at vertices
       const glow = glowAt(t == null ? 0 : t);

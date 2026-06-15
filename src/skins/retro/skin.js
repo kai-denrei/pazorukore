@@ -5,6 +5,9 @@
 
 import { makeGlyphLixie } from './glyph-lixie.js';
 import { makeRegionWarm } from './region-warm.js';
+import { makeBridgeRenderer } from '../_bridge.js';
+
+const BRIDGE = { line: '#ffc24a', ring: '#c8782a', ringDone: '#ffd27a', error: '#ff5a3c', disc: '#0c0803' };
 
 // canvas-side hex colors (the vendored renderer wants hex; hex2rgb parses these).
 // Amberglass direction: warm-amber glow on warm-black; given = brighter warm white, error = warm red.
@@ -34,6 +37,7 @@ const TOKENS = {
 
 const glyph = makeGlyphLixie(GLYPH);
 const region = makeRegionWarm(REGION);
+const bridge = makeBridgeRenderer(BRIDGE, { glow: 11, core: 0.25, lineWidth: 0.08, ringWidth: 0.055 });
 
 export const retro = {
   meta: {
@@ -44,6 +48,7 @@ export const retro = {
   },
   glyph,
   region,
+  bridge,
   renderPolicy: (role) => (role === 'given' || role === 'fillable' || role === 'clue') ? 'device' : 'plain',
   applyPalette(rootEl) {
     for (const [k, v] of Object.entries(TOKENS)) rootEl.style.setProperty(k, v);

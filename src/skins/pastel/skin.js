@@ -5,6 +5,10 @@
 
 import { makeGlyphSplitflap, DEFAULT_SEED } from './glyph-splitflap.js';
 import { makeRegionSoft } from './region-soft.js';
+import { makeBridgeRenderer } from '../_bridge.js';
+
+// dark slate bridges + cream island discs read clearly on the light pastel board.
+const BRIDGE = { line: '#5a6b8c', ring: '#9aa7bb', ringDone: '#6fb89a', error: '#e0314a', disc: '#f6efe2' };
 
 // canvas-side hex colors (the vendored renderer + region layer want hex / css colors).
 //   card = cream card stock · ink = dark printed ink · bg = light board behind the cards.
@@ -41,6 +45,7 @@ const TOKENS = {
 
 const glyph = makeGlyphSplitflap(GLYPH);
 const region = makeRegionSoft(REGION);
+const bridge = makeBridgeRenderer(BRIDGE, { glow: 0, core: 0, lineWidth: 0.088, ringWidth: 0.06 });
 
 export const pastel = {
   meta: {
@@ -51,6 +56,7 @@ export const pastel = {
   },
   glyph,
   region,
+  bridge,
   renderPolicy: (role) => (role === 'given' || role === 'fillable' || role === 'clue') ? 'device' : 'plain',
   applyPalette(rootEl) {
     for (const [k, v] of Object.entries(TOKENS)) rootEl.style.setProperty(k, v);

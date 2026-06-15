@@ -121,12 +121,30 @@ export class Board {
     };
   }
 
-  // repaint only the grid layer (gridlines + region membranes) at time t.
+  // repaint only the grid layer (gridlines + region membranes + bridges) at time t.
   repaintGrid(t) {
     if (!this.boxes.size) return;
     const g = this.geom();
+    const now = t == null ? performance.now() : t;
     this.gctx.clearRect(0, 0, g.w, g.h);
-    if (this.skin.region && this.skin.region.paint) this.skin.region.paint(this.gctx, g, t == null ? performance.now() : t);
+    if (this.skin.region && this.skin.region.paint) this.skin.region.paint(this.gctx, g, now);
+    const st = this.engine.current();
+    if (st.bridges && this.skin.bridge && this.skin.bridge.paint) {
+      this.skin.bridge.paint(this.gctx, g, st.bridges, { conflicts: this.engine.ui.conflicts, sums: this._bridgeSums(st), t: now });
+    }
+  }
+
+  // current attached-bridge sum per island id (for the bridge renderer's satisfied/over colouring).
+  _bridgeSums(st) {
+    const sums = new Map();
+    for (const cell of st.grid.cells) if (cell.role === 'clue') sums.set(cell.id, 0);
+    for (const [key, count] of Object.entries(st.bridges || {})) {
+      if (!count) continue;
+      const [a, b] = key.split('|');
+      if (sums.has(a)) sums.set(a, sums.get(a) + count);
+      if (sums.has(b)) sums.set(b, sums.get(b) + count);
+    }
+    return sums;
   }
 
   repaintAll() {
@@ -190,7 +208,10 @@ export class Board {
     on(EVENTS.regionInvalid, (p) => { const k = regionKey(p); if (k != null) this.validatedRegions.delete(k); this.repaintAll(); });
     on(EVENTS.regionCommitted, () => this.repaintAll());
     on(EVENTS.cellCleared, (p) => { if (p && p.clueId != null) { this.validatedRegions.delete(p.clueId); this.repaintAll(); } });
-    on(EVENTS.moved, ({ dir }) => { if (dir && dir !== 'do') this.repaintAll(); }); // undo/redo/restart may move regions
+    on(EVENTS.moved, ({ dir }) => {
+      if (dir && dir !== 'do') this.repaintAll();            // undo/redo/restart may move regions/bridges
+      else if (this.engine.current().bridges) this.repaintGrid(); // a bridge 'do' move redraws the bridge layer
+    });
 
     // semantic events that should ANIMATE their cell(s)
     const animEvents = [EVENTS.cellPlaced, EVENTS.cellCleared, EVENTS.conflictDetected, EVENTS.regionValidated, EVENTS.solved, EVENTS.hintRevealed];

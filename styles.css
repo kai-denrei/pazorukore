@@ -296,6 +296,15 @@ body {
   box-shadow: 0 0 16px -5px var(--glyph-error, #ff4d4d);
 }
 
+/* bridge-draw: snapped preview line + island highlights (Bridges) */
+.bridge-preview {
+  position: absolute; z-index: 5; pointer-events: none; border-radius: 3px;
+  background: color-mix(in oklch, var(--accent, #00e5d0) 60%, transparent);
+  box-shadow: 0 0 14px -2px var(--halo, var(--accent, #00e5d0));
+}
+.board .cell.is-bridge-from { box-shadow: inset 0 0 0 2px var(--select, #ffb000), 0 0 16px -2px var(--select, #ffb000); border-radius: 50%; z-index: 4; }
+.board .cell.is-bridge-target { box-shadow: inset 0 0 0 2px var(--accent, #00e5d0), 0 0 16px -2px var(--accent, #00e5d0); border-radius: 50%; z-index: 4; }
+
 .controls {
   flex: 0 0 auto;
   padding: 10px 14px calc(12px + var(--safe-b));
