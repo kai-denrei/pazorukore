@@ -252,6 +252,13 @@ body {
 .board-canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .board-canvas.grid-layer { z-index: 1; }
 .board-canvas.glyph-layer { z-index: 2; }
+/* KenKen cage clue label — top-left corner, above the tile/glyph */
+.board .cell .cell-label {
+  position: absolute; top: 2px; left: 3px; z-index: 5;
+  font-family: var(--mono); font-weight: 700; font-size: 11px; line-height: 1;
+  letter-spacing: -0.5px; color: var(--cage-text, #cdeeff);
+  pointer-events: none;
+}
 .board .cell {
   position: relative;
   z-index: 3;

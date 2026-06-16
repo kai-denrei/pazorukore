@@ -29,6 +29,9 @@ export function makeGrid(rows, cols, init) {
         value: p.value != null ? String(p.value) : null, // ALWAYS a string or null (§8.1)
         regionId: p.regionId != null ? p.regionId : null,
         given: !!p.given,
+        // Optional display clue carried by a cage's anchor cell (KenKen "6×", "3-", …). Additive,
+        // defaults null, does NOT affect gridDiff or other games.
+        label: p.label != null ? String(p.label) : null,
       });
       cells[r * cols + c] = cell;
       index.set(cell.id, r * cols + c);

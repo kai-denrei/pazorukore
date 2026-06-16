@@ -36,6 +36,7 @@ const TOKENS = {
   '--accent': '#00e5d0',
   '--halo': '#00e5d0',
   '--select': '#ffb000',
+  '--cage-text': '#cdeeff',
   '--grid-line': 'oklch(0.62 0.13 190 / 0.55)',
   '--text-chrome': '#cdeeff',
   '--cell-gap': '2px',
@@ -59,6 +60,7 @@ export const futuristic = {
   bridge,
   loop,
   tint: TINT,
+  cage: { line: '#00e5d0', text: '#cdeeff' },   // KenKen cage outline + clue label
   // Masyu pearls (role 'clue' with value 'B'/'W') are drawn on the grid layer by the loop renderer,
   // NOT as glyphs — route them to 'plain' so no 16-seg glyph is painted over them (the 16-seg glyph
   // can't render 'B'/'W' anyway). Bridges islands (numeric clue value) still get a 'device' glyph.

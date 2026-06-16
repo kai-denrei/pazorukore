@@ -7,12 +7,15 @@
 import { EVENTS } from '../core/events.js';
 import { getCell } from '../core/grid.js';
 import { makeRegionTint } from '../skins/_region-tint.js';
+import { makeCageRenderer } from '../skins/_cage.js';
 
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)');
 
 // Shared Fillomino value-region tint (skin-agnostic; coloured by the cell value via the skin's
 // `tint` palette). Stateless across boards, so a single instance is fine.
 const regionTint = makeRegionTint();
+// Shared KenKen cage outline + clue-label renderer (skin-agnostic; static cage structure).
+const cageRenderer = makeCageRenderer();
 
 export class Board {
   constructor(boardEl, engine, skin) {
@@ -53,6 +56,13 @@ export class Board {
       b.dataset.col = cell.col;
       b.setAttribute('role', 'gridcell');
       b.setAttribute('aria-label', `row ${cell.row + 1} column ${cell.col + 1}, empty`);
+      // KenKen cage clue (e.g. "6×") — a DOM span in the corner so it sits above opaque tiles.
+      if (cell.label) {
+        const lbl = document.createElement('span');
+        lbl.className = 'cell-label';
+        lbl.textContent = cell.label;
+        b.appendChild(lbl);
+      }
       this.el.appendChild(b);
       this.cells.set(cell.id, b);
     }
@@ -146,6 +156,10 @@ export class Board {
     // because repaintGrid runs on the grid-pulse (futuristic) and on each cell change (see _subscribe).
     if (g.game === 'fillomino' && this.skin.tint) {
       regionTint.paint(this.gctx, g, this.skin.tint);
+    }
+    // KenKen: bold cage outlines + clue labels (cages are static, so the normal grid repaint covers it).
+    if (g.game === 'kenken' && this.skin.cage) {
+      cageRenderer.paint(this.gctx, g, this.skin.cage);
     }
   }
 

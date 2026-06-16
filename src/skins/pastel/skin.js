@@ -44,6 +44,7 @@ const TOKENS = {
   '--accent': '#9fc2b6',
   '--halo': 'oklch(0.86 0.05 25 / 0.4)',
   '--select': '#6c5ce7',
+  '--cage-text': '#3a4a66',
   '--grid-line': 'oklch(0.80 0.02 85 / 0.6)',
   '--text-chrome': '#4a443d',
   '--cell-gap': '3px',
@@ -65,6 +66,7 @@ export const pastel = {
   region,
   bridge,
   tint: TINT,
+  cage: { line: '#5a6b8c', text: '#3a4a66' },   // KenKen cage outline + clue label (soft, dark ink on cream)
   renderPolicy: (role) => (role === 'given' || role === 'fillable' || role === 'clue') ? 'device' : 'plain',
   applyPalette(rootEl) {
     for (const [k, v] of Object.entries(TOKENS)) rootEl.style.setProperty(k, v);
