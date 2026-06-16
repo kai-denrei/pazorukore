@@ -421,6 +421,7 @@ body {
 .pl-card { border: 1px solid var(--chrome-line); border-left-width: 3px; border-radius: 10px; padding: 9px 12px; background: var(--chrome-bg); }
 .pl-card.done { border-left-color: var(--chrome-accent); }
 .pl-card.next { border-left-color: #4a4a52; }
+.pl-card.todo { border-left-color: var(--select, #ffb000); }
 .pl-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .pl-name { font-family: var(--serif); font-size: 17px; color: var(--chrome-ink); }
 .pl-card.done .pl-name { color: var(--chrome-accent); }

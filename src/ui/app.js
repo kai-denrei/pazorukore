@@ -334,6 +334,14 @@ const NEXT_GAMES = [
   { n: 'Star Battle', k: 'starbattle', i: 'star-place', d: 'Place stars so every row, column and region has exactly N, with no two stars touching.' },
   { n: 'Word / alnum', i: 'v2 glyphs', d: '16-segment & dot-matrix skins unlock letters; the capability negotiation already gates which skins can host alphabetic games.' },
 ];
+// Feature / polish backlog (not games) — surfaced in the Pipeline "to do" section.
+const TODO_FEATURES = [
+  { n: 'Run recap', i: 'scoring', d: 'After the final round of a 10/10 run, show a recap table — one row per round (R# · time · result, e.g. PĀFEKUTO) plus the total score.' },
+  { n: 'Session high-scores', i: 'scoring', d: 'Per session, keep a high-score board: the single fastest round, and the top-3 total run scores.' },
+  { n: 'Action display (START / NEW)', i: 'chrome', d: 'A permanent 16-segment display — like the timer, off-segments showing as ghost — in one fixed spot for continuity. Reads START on landing, NEW when a round is over and a new game can begin, and shows other messages. Glowing neon green glyphs.' },
+  { n: 'Ready-to-start gate', i: 'flow', d: 'On landing or refresh the timer does NOT auto-start — the player presses START when ready. The clock begins on START.' },
+  { n: 'Sudoku finalize FX', i: 'sudoku', d: 'Make the board-complete animation slightly longer and more “flipper”, with more glow variation (low → high → low).' },
+];
 
 function openPipeline() {
   const card = (g, cls) => `<div class="pl-card ${cls}"><div class="pl-head"><span class="pl-name">${g.n}</span>${g.k && RULES[g.k] ? `<button class="pick-i pl-i" data-i="${g.k}" title="${g.n} rules" aria-label="${g.n} rules">i</button>` : ''}<span class="pl-tag">${g.i}</span></div><p class="pl-desc">${g.d}</p></div>`;
@@ -343,6 +351,8 @@ function openPipeline() {
     <div class="pl-list">${SHIPPED_GAMES.map((g) => card(g, 'done')).join('')}</div>
     <p class="muted">next up — the roadmap</p>
     <div class="pl-list">${NEXT_GAMES.map((g) => card(g, 'next')).join('')}</div>
+    <p class="muted">to do — features &amp; polish</p>
+    <div class="pl-list">${TODO_FEATURES.map((g) => card(g, 'todo')).join('')}</div>
     <p class="muted pl-foot">3 skins shipped: Futuristic (16-segment) · Retro (Lixie tube) · Pastel (split-flap). Any skin wears any game.</p>`);
   const pl = document.getElementById('pipeline');
   pl.querySelectorAll('.pl-i').forEach((b) => b.onclick = () => openRules(b.dataset.i));
