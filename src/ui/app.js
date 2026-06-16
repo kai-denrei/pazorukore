@@ -6,6 +6,7 @@
 import { renderVersionGlyphs } from './version-badge.js';
 import { initPWA } from './pwa.js';
 import { TimerDisplay } from './timer-display.js';
+import { ActionDisplay } from './action-display.js';
 import { ScoreKeeper } from './score.js';
 import { RULES } from './rules.js';
 import { Engine } from '../core/engine.js';
@@ -97,7 +98,10 @@ async function mountGame(gameId, skinId, params) {
   const stageSecs = stages ? stages.time[app.engine.params.difficulty] : null;
   app.budgetMs = stageSecs ? stageSecs * 1000 : null;
   app.undoUsed = false; app.scored = false;
-  app.engine.on(EVENTS.moved, ({ dir }) => { if (dir && dir !== 'do') app.undoUsed = true; });
+  app.engine.on(EVENTS.moved, ({ dir }) => {
+    if (dir && dir !== 'do') app.undoUsed = true;
+    else if (dir === 'do' && app.phase === 'ready') startRound(); // first real move begins timing too
+  });
   app.engine.on(EVENTS.solved, onSolved);
 
   const boardEl = document.getElementById('board');
@@ -114,7 +118,7 @@ async function mountGame(gameId, skinId, params) {
     app.controls.mount();
   }
 
-  startTimer();
+  setReady();           // ready-to-start gate: timer armed at 00:00, action display shows START
   updateUpcomingRun();
   updateGameRail();
 
@@ -381,43 +385,84 @@ function openPipeline() {
   pl.querySelectorAll('.pl-i').forEach((b) => b.onclick = () => openRules(b.dataset.i));
 }
 
-// ── elapsed-time clock — rendered as a 16-segment red display (starts on load, stops on solve) ──
-let _timer = { start: 0, interval: 0, stopped: false, elapsed: 0, disp: null, budgetMs: null };
+// ── elapsed-time clock (16-seg red) — ARMED at 00:00 on load (ready-to-start gate), runs on START ──
+let _timer = { start: 0, interval: 0, running: false, solved: false, elapsed: 0, disp: null, actDisp: null, budgetMs: null };
 function timerDisp() {
   if (!_timer.disp) { const cv = document.getElementById('timer-canvas'); if (cv) _timer.disp = new TimerDisplay(cv); }
   return _timer.disp;
 }
+// READY: show 00:00 (or the full budget) in red, clock NOT running — the player presses START.
+function armTimer() {
+  clearInterval(_timer.interval); _timer.interval = 0;
+  _timer.running = false; _timer.solved = false; _timer.elapsed = 0; _timer.start = 0;
+  _timer.budgetMs = app.budgetMs || null;
+  renderTimer();
+}
 function startTimer() {
   clearInterval(_timer.interval);
-  _timer.start = performance.now(); _timer.stopped = false; _timer.elapsed = 0;
+  _timer.start = performance.now(); _timer.running = true; _timer.solved = false; _timer.elapsed = 0;
   _timer.budgetMs = app.budgetMs || null;
   renderTimer();
   _timer.interval = setInterval(renderTimer, 1000);
 }
 function stopTimer() {
-  if (_timer.stopped) return;
-  _timer.elapsed = performance.now() - _timer.start; _timer.stopped = true;
-  clearInterval(_timer.interval);
+  if (_timer.solved) return;
+  _timer.elapsed = _timer.running ? (performance.now() - _timer.start) : 0;
+  _timer.running = false; _timer.solved = true;
+  clearInterval(_timer.interval); _timer.interval = 0;
   renderTimer();
 }
 function renderTimer() {
-  const ms = _timer.stopped ? _timer.elapsed : (performance.now() - _timer.start);
+  const ms = _timer.running ? (performance.now() - _timer.start) : _timer.elapsed;
   const d = timerDisp(); if (!d) return;
   if (_timer.budgetMs != null) {
     const { mmss, over } = countDown(_timer.budgetMs - ms);
-    d.render(mmss, _timer.stopped, over);
+    d.render(mmss, _timer.solved, over);
   } else {
-    d.render(countUp(ms), _timer.stopped, false);
+    d.render(countUp(ms), _timer.solved, false);
   }
+}
+
+// ── START / NEW action display (16-seg green) + round lifecycle ───────────────
+// phase: 'ready' (press START or make the first move to begin timing) → 'playing' → 'solved'
+// (press NEW for the next puzzle). The label ghosts (dim) while playing, lit green when actionable.
+function actionDisp() {
+  if (!_timer.actDisp) { const cv = document.getElementById('action-canvas'); if (cv) _timer.actDisp = new ActionDisplay(cv); }
+  return _timer.actDisp;
+}
+function renderAction() {
+  const d = actionDisp(); if (!d) return;
+  const active = app.phase === 'ready' || app.phase === 'solved';
+  // START before the round; NEW always present thereafter — ghosted while playing, lit when solved.
+  const label = app.phase === 'ready' ? 'START' : 'NEW';
+  const btn = document.getElementById('btn-action');
+  if (btn) { btn.dataset.phase = app.phase || 'ready'; btn.setAttribute('aria-label', active ? label : 'in play'); }
+  d.render(label, active);
+}
+function setReady() {            // a fresh puzzle is loaded but not yet timed
+  app.phase = 'ready';
+  armTimer();
+  renderAction();
+}
+function startRound() {          // begin timing the current puzzle (explicit START, or first move)
+  if (app.phase !== 'ready') return;
+  app.phase = 'playing';
+  startTimer();
+  renderAction();
+}
+function onActionPress() {
+  if (app.phase === 'ready') startRound();
+  else if (app.phase === 'solved') newGameWith({});   // advance → mountGame → setReady()
 }
 
 // ── scoring + combo callouts (timer-linked) ───────────────────────────────────
 function onSolved() {
   stopTimer();
+  app.phase = 'solved';
+  renderAction();
   if (app.scored || !app.score) return;
   app.scored = true;
-  const elapsedMs = _timer.stopped ? _timer.elapsed : (performance.now() - _timer.start);
-  const secs = elapsedMs / 1000;
+  const secs = _timer.elapsed / 1000;
   const opts = _timer.budgetMs != null ? { budget: _timer.budgetMs / 1000 } : undefined;
   const r = app.score.record(secs, app.undoUsed, opts);
   updateScoreHUD(r);
@@ -492,8 +537,8 @@ function init() {
   document.getElementById('btn-menu').onclick = openPicker;
   document.getElementById('btn-pipeline').onclick = openPipeline;
   const rb = document.getElementById('btn-rules'); if (rb) rb.onclick = () => openRules(app.gameId);
-  document.getElementById('btn-new').onclick = () => newGameWith({});
-  window.addEventListener('resize', () => { if (_timer.disp) renderTimer(); });
+  document.getElementById('btn-action').onclick = onActionPress;
+  window.addEventListener('resize', () => { if (_timer.disp) renderTimer(); if (_timer.actDisp && app.phase) renderAction(); });
   document.getElementById('btn-menu').addEventListener('contextmenu', (e) => e.preventDefault());
   mountGame(app.gameId, app.skinId);
   const sheet = q.get('sheet');
