@@ -27,6 +27,9 @@ const SKIN_LOADERS = {
 };
 const pickDefault = (mod) => mod.default || Object.values(mod)[0];
 
+// One katakana glyph per game for the quick-switch rail (first kana of each name, パ-logo style).
+const GAME_GLYPHS = { sudoku: 'ス', shikaku: 'シ', bridges: 'ブ', masyu: 'マ', fillomino: 'フ' };
+
 // Temporarily-disabled (game × skin) pairings. Bridges' bridge/island renderer is only correct
 // under Futuristic right now; Retro (Lixie) and Pastel (split-flap) render broken, so they're
 // greyed out in the picker and coerced to a valid skin if reached via URL/game-ID. Drop the
@@ -113,6 +116,7 @@ async function mountGame(gameId, skinId, params) {
 
   startTimer();
   updateUpcomingRun();
+  updateGameRail();
 
   // admin tuning panel reflects the active skin's glyph params
   if (app.admin) openAdmin();
@@ -320,6 +324,24 @@ function newGameWith(extra) {
   mountGame(app.gameId, app.skinId, { ...app.game.defaultParams(), ...extra, seed: undefined });
 }
 
+// ── katakana game-mode rail (quick one-tap switch between games) ──────────────
+function renderGameRail() {
+  const rail = document.getElementById('game-rail');
+  if (!rail) return;
+  rail.innerHTML = Object.keys(GAME_LOADERS).map((g) => {
+    const name = (RULES[g] && RULES[g].title) || g;
+    return `<button class="game-tab" data-g="${g}" title="${name}" aria-label="${name}"${g === app.gameId ? ' aria-current="true"' : ''}>${GAME_GLYPHS[g] || g[0].toUpperCase()}</button>`;
+  }).join('');
+  rail.querySelectorAll('.game-tab').forEach((b) => b.onclick = () => { if (b.dataset.g !== app.gameId) mountGame(b.dataset.g, app.skinId); });
+}
+function updateGameRail() {
+  const rail = document.getElementById('game-rail');
+  if (!rail) return;
+  rail.querySelectorAll('.game-tab').forEach((b) => {
+    if (b.dataset.g === app.gameId) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current');
+  });
+}
+
 // Pipeline / roadmap: what's shipped + what's next (the §18 horizon), each game briefly explained.
 const SHIPPED_GAMES = [
   { n: 'Sudoku', k: 'sudoku', i: 'digit-entry', d: 'Classic 9×9 Latin square — fill so every row, column and 3×3 box holds 1–9 with no repeats.' },
@@ -466,6 +488,7 @@ function init() {
   app.score = new ScoreKeeper();
   renderVersionGlyphs();
   initPWA();
+  renderGameRail();
   document.getElementById('btn-menu').onclick = openPicker;
   document.getElementById('btn-pipeline').onclick = openPipeline;
   const rb = document.getElementById('btn-rules'); if (rb) rb.onclick = () => openRules(app.gameId);
