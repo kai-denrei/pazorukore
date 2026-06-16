@@ -304,6 +304,8 @@ body {
 }
 .board .cell.is-bridge-from { box-shadow: inset 0 0 0 2px var(--select, #ffb000), 0 0 16px -2px var(--select, #ffb000); border-radius: 50%; z-index: 4; }
 .board .cell.is-bridge-target { box-shadow: inset 0 0 0 2px var(--accent, #00e5d0), 0 0 16px -2px var(--accent, #00e5d0); border-radius: 50%; z-index: 4; }
+/* Masyu loop-draw: the active drag anchor cell */
+.board .cell.is-loop-anchor { box-shadow: inset 0 0 0 2px var(--select, #ffb000), 0 0 16px -2px var(--select, #ffb000); border-radius: 8px; z-index: 4; }
 
 .controls {
   flex: 0 0 auto;

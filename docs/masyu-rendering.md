@@ -1,7 +1,12 @@
 # Masyu / Pearl — Futuristic rendering spec
 
-Build-ready design for the upcoming Masyu (Tatham's "Pearl") game. Produced and adversarially
-verified against the real renderers (2026-06-16). **Spec only — no code shipped yet.**
+Build-ready design for the Masyu (Tatham's "Pearl") game. Produced and adversarially
+verified against the real renderers (2026-06-16).
+
+> **STATUS: BUILT & SHIPPED 2026-06-16.** Implemented as `src/games/masyu/{index,generator,solver}.js`,
+> `src/skins/futuristic/region-masyu.js`, `src/interaction/loop-draw.js` (+ `tests/masyu.test.mjs`).
+> All 3 blockers below were handled in wiring. Note: difficulty is expressed by loop **density** on a
+> fixed **6×6** board (not larger boards) — see the dead-end in `.deban/roles/dev.md`.
 
 ## Look (owner's direction)
 

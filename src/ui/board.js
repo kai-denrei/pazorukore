@@ -132,6 +132,10 @@ export class Board {
     if (st.bridges && this.skin.bridge && this.skin.bridge.paint) {
       this.skin.bridge.paint(this.gctx, g, st.bridges, { conflicts: this.engine.ui.conflicts, sums: this._bridgeSums(st), t: now });
     }
+    // Masyu: the loop renderer draws the closed loop (under) + the pearl squares (over) on the grid layer.
+    if (st.loop && this.skin.loop && this.skin.loop.paint) {
+      this.skin.loop.paint(this.gctx, g, st.loop, { conflicts: this.engine.ui.conflicts, t: now });
+    }
   }
 
   // current attached-bridge sum per island id (for the bridge renderer's satisfied/over colouring).
@@ -172,7 +176,7 @@ export class Board {
     if (!box) return;
     const cell = getCell(this.engine.current().grid, id);
     if (!cell) return;
-    const policy = this.skin.renderPolicy ? this.skin.renderPolicy(cell.role) : 'device';
+    const policy = this.skin.renderPolicy ? this.skin.renderPolicy(cell.role, cell) : 'device';
 
     // clear just this cell's region on the glyph layer (diff-and-patch)
     this.lctx.clearRect(box.x - 1, box.y - 1, box.w + 2, box.h + 2);
@@ -209,8 +213,8 @@ export class Board {
     on(EVENTS.regionCommitted, () => this.repaintAll());
     on(EVENTS.cellCleared, (p) => { if (p && p.clueId != null) { this.validatedRegions.delete(p.clueId); this.repaintAll(); } });
     on(EVENTS.moved, ({ dir }) => {
-      if (dir && dir !== 'do') this.repaintAll();            // undo/redo/restart may move regions/bridges
-      else if (this.engine.current().bridges) this.repaintGrid(); // a bridge 'do' move redraws the bridge layer
+      if (dir && dir !== 'do') this.repaintAll();            // undo/redo/restart may move regions/bridges/loop
+      else if (this.engine.current().bridges || this.engine.current().loop) this.repaintGrid(); // a bridge/loop 'do' redraws the grid layer
     });
 
     // semantic events that should ANIMATE their cell(s)

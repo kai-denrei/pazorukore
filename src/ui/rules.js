@@ -63,7 +63,7 @@ export const RULES = {
     ],
     win: "One closed loop; every clue's edge count satisfied.",
   },
-  pearl: {
+  masyu: {
     title: 'Pearl',
     lines: [
       'Draw one closed loop, orthogonal moves only.',
