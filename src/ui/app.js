@@ -10,6 +10,7 @@ import { ScoreKeeper } from './score.js';
 import { Engine } from '../core/engine.js';
 import { EVENTS } from '../core/events.js';
 import { negotiate } from '../core/capabilities.js';
+import { countUp, countDown } from './clock-format.js';
 
 const GAME_LOADERS = {
   sudoku: () => import('../games/sudoku/index.js'),
@@ -55,6 +56,15 @@ async function mountGame(gameId, skinId, params) {
 
   if (!game || !skin || !Board) { showStatus(missing); return; }
 
+  // Staged-countdown auto-ramp (Shikaku declares game.meta.stages). Apply to a FRESH puzzle only
+  // (object/undefined params), never to an explicit shared game-ID string — that carries its own
+  // encoded difficulty.
+  const stages = game.meta && game.meta.stages;
+  if (stages && (params == null || typeof params === 'object')) {
+    const n = app.score ? (app.score.gameInRun >= 10 ? 1 : app.score.gameInRun + 1) : 1;
+    params = { ...(params || game.defaultParams()), difficulty: stages.curveForGame(n) };
+  }
+
   const neg = negotiate(game, skin);
   if (!neg.ok) { showStatus([`incompatible: ${neg.reasons.join('; ')}`]); return; }
 
@@ -67,6 +77,10 @@ async function mountGame(gameId, skinId, params) {
   app.game = game; app.skin = skin;
   try { app.engine.load(game, params || game.defaultParams()); }
   catch (err) { app.engine.load(game, game.defaultParams()); } // bad game-ID → fall back to a fresh puzzle
+  // Countdown budget (ms) for staged games, from the difficulty the engine actually loaded
+  // (covers both fresh ramps and explicit game-IDs); null → legacy count-up timer.
+  const stageSecs = stages ? stages.time[app.engine.params.difficulty] : null;
+  app.budgetMs = stageSecs ? stageSecs * 1000 : null;
   app.undoUsed = false; app.scored = false;
   app.engine.on(EVENTS.moved, ({ dir }) => { if (dir && dir !== 'do') app.undoUsed = true; });
   app.engine.on(EVENTS.solved, onSolved);
@@ -225,10 +239,19 @@ function openSettings() {
   const params = app.game ? app.game.defaultParams() : {};
   const diffs = ['easy', 'medium', 'hard'];
   const gid = (app.engine && app.game) ? app.engine.gameId() : '';
+  const stages = app.game && app.game.meta && app.game.meta.stages;
+  const diffSection = stages
+    ? `<p class="muted">stage — auto-ramps across the 10-game run</p>
+       <div class="stage-curve">
+         <span>1–3 <b>easy</b> ${stages.time.easy}s</span>
+         <span>4–7 <b>medium</b> ${stages.time.medium}s</span>
+         <span>8–10 <b>hard</b> ${stages.time.hard}s</span>
+       </div>`
+    : `<p class="muted">difficulty — starts a new puzzle</p>
+       <div class="pick-row">${diffs.map((d) => `<button class="pick" data-diff="${d}"${params.difficulty === d ? ' aria-pressed="true"' : ''}>${d}</button>`).join('')}</div>`;
   openSheet('settings', `
     <h2>Settings</h2>
-    <p class="muted">difficulty — starts a new puzzle</p>
-    <div class="pick-row">${diffs.map((d) => `<button class="pick" data-diff="${d}"${params.difficulty === d ? ' aria-pressed="true"' : ''}>${d}</button>`).join('')}</div>
+    ${diffSection}
     <p class="muted">game ID — share or enter a puzzle</p>
     <div class="gid-row"><input id="gid-in" class="gid-input" value="${gid}" spellcheck="false" autocapitalize="off"><button class="pick" data-a="gid-copy">copy</button><button class="pick" data-a="gid-load">load</button></div>
     <p class="muted">accessibility</p>
@@ -277,7 +300,7 @@ function openPipeline() {
 }
 
 // ── elapsed-time clock — rendered as a 16-segment red display (starts on load, stops on solve) ──
-let _timer = { start: 0, interval: 0, stopped: false, elapsed: 0, disp: null };
+let _timer = { start: 0, interval: 0, stopped: false, elapsed: 0, disp: null, budgetMs: null };
 function timerDisp() {
   if (!_timer.disp) { const cv = document.getElementById('timer-canvas'); if (cv) _timer.disp = new TimerDisplay(cv); }
   return _timer.disp;
@@ -285,6 +308,7 @@ function timerDisp() {
 function startTimer() {
   clearInterval(_timer.interval);
   _timer.start = performance.now(); _timer.stopped = false; _timer.elapsed = 0;
+  _timer.budgetMs = app.budgetMs || null;
   renderTimer();
   _timer.interval = setInterval(renderTimer, 1000);
 }
@@ -296,9 +320,13 @@ function stopTimer() {
 }
 function renderTimer() {
   const ms = _timer.stopped ? _timer.elapsed : (performance.now() - _timer.start);
-  const s = Math.floor(ms / 1000), m = Math.min(99, Math.floor(s / 60));
-  const mmss = `${String(m).padStart(2, '0')}${String(s % 60).padStart(2, '0')}`;
-  const d = timerDisp(); if (d) d.render(mmss, _timer.stopped);
+  const d = timerDisp(); if (!d) return;
+  if (_timer.budgetMs != null) {
+    const { mmss, over } = countDown(_timer.budgetMs - ms);
+    d.render(mmss, _timer.stopped, over);
+  } else {
+    d.render(countUp(ms), _timer.stopped, false);
+  }
 }
 
 // ── scoring + combo callouts (timer-linked) ───────────────────────────────────
@@ -306,8 +334,10 @@ function onSolved() {
   stopTimer();
   if (app.scored || !app.score) return;
   app.scored = true;
-  const secs = (_timer.stopped ? _timer.elapsed : (performance.now() - _timer.start)) / 1000;
-  const r = app.score.record(secs, app.undoUsed);
+  const elapsedMs = _timer.stopped ? _timer.elapsed : (performance.now() - _timer.start);
+  const secs = elapsedMs / 1000;
+  const opts = _timer.budgetMs != null ? { budget: _timer.budgetMs / 1000 } : undefined;
+  const r = app.score.record(secs, app.undoUsed, opts);
   updateScoreHUD(r);
   if (r.callout) showStreak(r.callout, r.tier);
   if (r.overlay) showPerfectOverlay(r);
@@ -321,7 +351,11 @@ function updateScoreHUD(r) {
     num.classList.remove('bump'); void num.offsetWidth; num.classList.add('bump');
   }
   const lbl = document.getElementById('score-lbl');
-  if (lbl) lbl.textContent = r.perfect ? `+${r.points} ·×${r.mult.toFixed(1)}` : `+${r.points}`;
+  if (lbl) {
+    lbl.textContent = r.perfect
+      ? `+${r.points} ·×${r.mult.toFixed(1)}`
+      : (r.overBy > 0 ? `+${r.points} · OVER −${Math.ceil(r.overBy)}s` : `+${r.points}`);
+  }
   const prog = document.getElementById('run-prog');
   if (prog) prog.innerHTML = `${Math.min(r.gameInRun, 10)}<span class="run-sep">/</span>10`;
   const best = document.getElementById('run-best');
