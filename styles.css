@@ -184,11 +184,11 @@ body {
 .run-best { font-family: var(--mono); font-size: 10px; color: var(--chrome-ink-dim); }
 
 /* action button — a 16-segment START / NEW display (green twin of the timer bezel) */
+.action-wrap { position: relative; justify-self: center; }
 .action-btn {
-  justify-self: center;
-  width: 150px; height: 48px; padding: 4px 8px;
+  width: 150px; height: 48px; padding: 5px 11px;
   display: grid; place-items: stretch; cursor: pointer;
-  border-radius: 9px;
+  border-radius: 9px; overflow: hidden;          /* keep the glyph + glow inside the bezel */
   background: #02110a;
   border: none;
   box-shadow: inset 0 0 0 1px #0c2a1a, inset 0 3px 10px -5px #000, 0 0 14px -8px #2bff84;
@@ -199,30 +199,30 @@ body {
 
 /* combo callout (center screen) — escalating tier color + scale (adapted from KikaCentroid) */
 .streak-flash {
-  position: fixed; top: 40%; left: 50%;
-  transform: translate(-50%, -100%) scale(1); transform-origin: 50% 100%;
-  font-family: var(--mono); font-weight: 800; font-size: 30px; text-align: center;
+  position: absolute; top: calc(100% + 4px); left: 50%;
+  transform: translateX(-50%) scale(1); transform-origin: 50% 0%;
+  font-family: var(--mono); font-weight: 800; font-size: 19px; text-align: center;
   white-space: nowrap; pointer-events: none; z-index: 80; line-height: 1;
-  color: var(--chrome-accent); text-shadow: 0 0 20px currentColor; opacity: 0;
+  color: var(--chrome-accent); text-shadow: 0 0 16px currentColor; opacity: 0;
 }
 .streak-flash[hidden] { display: none; }
 .streak-flash.show { animation: streak-pop var(--streak-dur, 1600ms) cubic-bezier(.2,.8,.3,1) both; }
-.streak-flash.tier-1  { color: #00e5d0; --streak-scale: 1.3;  --streak-dur: 1500ms; }
-.streak-flash.tier-2  { color: #00d4ff; --streak-scale: 1.45; --streak-dur: 1700ms; }
-.streak-flash.tier-3  { color: #38d0ff; --streak-scale: 1.65; --streak-dur: 1800ms; }
-.streak-flash.tier-4  { color: #00ff88; --streak-scale: 1.8;  --streak-dur: 1900ms; }
-.streak-flash.tier-5  { color: #66ff66; --streak-scale: 1.95; --streak-dur: 1900ms; }
-.streak-flash.tier-6  { color: #ffaa00; --streak-scale: 2.15; --streak-dur: 2000ms; }
-.streak-flash.tier-7  { color: #ffcc00; --streak-scale: 2.35; --streak-dur: 2000ms; }
-.streak-flash.tier-8  { color: #ff6b6b; --streak-scale: 2.55; --streak-dur: 2100ms; }
-.streak-flash.tier-9  { color: #ff4444; --streak-scale: 2.75; --streak-dur: 2100ms; }
-.streak-flash.tier-10 { color: #ffffff; --streak-scale: 3.1;  --streak-dur: 2600ms; text-shadow: 0 0 26px #fff, 0 0 52px var(--chrome-accent); }
+.streak-flash.tier-1  { color: #00e5d0; --streak-scale: 1.0;  --streak-dur: 1500ms; }
+.streak-flash.tier-2  { color: #00d4ff; --streak-scale: 1.08; --streak-dur: 1700ms; }
+.streak-flash.tier-3  { color: #38d0ff; --streak-scale: 1.16; --streak-dur: 1800ms; }
+.streak-flash.tier-4  { color: #00ff88; --streak-scale: 1.24; --streak-dur: 1900ms; }
+.streak-flash.tier-5  { color: #66ff66; --streak-scale: 1.32; --streak-dur: 1900ms; }
+.streak-flash.tier-6  { color: #ffaa00; --streak-scale: 1.42; --streak-dur: 2000ms; }
+.streak-flash.tier-7  { color: #ffcc00; --streak-scale: 1.52; --streak-dur: 2000ms; }
+.streak-flash.tier-8  { color: #ff6b6b; --streak-scale: 1.62; --streak-dur: 2100ms; }
+.streak-flash.tier-9  { color: #ff4444; --streak-scale: 1.72; --streak-dur: 2100ms; }
+.streak-flash.tier-10 { color: #ffffff; --streak-scale: 1.9;  --streak-dur: 2600ms; text-shadow: 0 0 18px #fff, 0 0 36px var(--chrome-accent); }
 @keyframes streak-pop {
-  0%   { opacity: 0; transform: translate(-50%, -100%) scale(.4); }
-  14%  { opacity: 1; transform: translate(-50%, -100%) scale(calc(var(--streak-scale, 1.5) * 1.06)); }
-  28%  { transform: translate(-50%, -100%) scale(var(--streak-scale, 1.5)); }
-  86%  { opacity: 1; transform: translate(-50%, -100%) scale(var(--streak-scale, 1.5)); }
-  100% { opacity: 0; transform: translate(-50%, -100%) scale(calc(var(--streak-scale, 1.5) * 1.06)); }
+  0%   { opacity: 0; transform: translateX(-50%) translateY(-4px) scale(.5); }
+  16%  { opacity: 1; transform: translateX(-50%) translateY(0) scale(calc(var(--streak-scale, 1.2) * 1.08)); }
+  30%  { transform: translateX(-50%) translateY(0) scale(var(--streak-scale, 1.2)); }
+  84%  { opacity: 1; transform: translateX(-50%) translateY(0) scale(var(--streak-scale, 1.2)); }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-2px) scale(calc(var(--streak-scale, 1.2) * 1.08)); }
 }
 
 /* flawless-run / streak-10 full-screen overlay */

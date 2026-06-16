@@ -97,7 +97,7 @@ async function mountGame(gameId, skinId, params) {
   // (covers both fresh ramps and explicit game-IDs); null → legacy count-up timer.
   const stageSecs = stages ? stages.time[app.engine.params.difficulty] : null;
   app.budgetMs = stageSecs ? stageSecs * 1000 : null;
-  app.undoUsed = false; app.scored = false;
+  app.undoUsed = false; app.scored = false; app.revealed = false;
   app.engine.on(EVENTS.moved, ({ dir }) => {
     if (dir && dir !== 'do') app.undoUsed = true;
     else if (dir === 'do' && app.phase === 'ready') startRound(); // first real move begins timing too
@@ -308,6 +308,11 @@ function openSettings() {
   openSheet('settings', `
     <h2>Settings</h2>
     ${diffSection}
+    <p class="muted">solver — every puzzle is generated with a guaranteed unique solution</p>
+    <div class="pick-row">
+      <button class="pick" data-a="solve">Reveal solution</button>
+      <button class="pick" data-a="hint">Hint (one step)</button>
+    </div>
     <p class="muted">game ID — share or enter a puzzle</p>
     <div class="gid-row"><input id="gid-in" class="gid-input" value="${gid}" spellcheck="false" autocapitalize="off"><button class="pick" data-a="gid-copy">copy</button><button class="pick" data-a="gid-load">load</button></div>
     <p class="muted">accessibility</p>
@@ -316,6 +321,8 @@ function openSettings() {
       <button class="pick" data-a="haptics" aria-pressed="${app.haptics !== false}">haptics</button>
     </div>`);
   const s = document.getElementById('settings');
+  s.querySelector('[data-a="solve"]').onclick = () => { s.hidden = true; revealSolution(); };
+  s.querySelector('[data-a="hint"]').onclick = () => { s.hidden = true; if (app.engine && app.engine.hint) app.engine.hint(); };
   s.querySelectorAll('[data-diff]').forEach((b) => b.onclick = () => { s.hidden = true; newGameWith({ difficulty: b.dataset.diff }); });
   s.querySelector('[data-a="gid-copy"]').onclick = () => { const v = document.getElementById('gid-in').value; if (navigator.clipboard) navigator.clipboard.writeText(v); };
   s.querySelector('[data-a="gid-load"]').onclick = () => { const v = document.getElementById('gid-in').value.trim(); if (v) { s.hidden = true; mountGame(app.gameId, app.skinId, v); } };
@@ -326,6 +333,14 @@ function openSettings() {
 function newGameWith(extra) {
   if (!app.game) return;
   mountGame(app.gameId, app.skinId, { ...app.game.defaultParams(), ...extra, seed: undefined });
+}
+
+// Reveal the full solution (the engine's own solver result). A player aid + a solvability check for
+// when a puzzle "feels impossible" — it proves the puzzle IS solvable. Does NOT score (app.revealed).
+function revealSolution() {
+  if (!app.engine || !app.engine.solution || app.phase === 'solved') return;
+  app.revealed = true;
+  solveFromSolution();
 }
 
 // ── katakana game-mode rail (quick one-tap switch between games) ──────────────
@@ -460,7 +475,7 @@ function onSolved() {
   stopTimer();
   app.phase = 'solved';
   renderAction();
-  if (app.scored || !app.score) return;
+  if (app.scored || !app.score || app.revealed) return;   // a revealed solution doesn't score
   app.scored = true;
   const secs = _timer.elapsed / 1000;
   const opts = _timer.budgetMs != null ? { budget: _timer.budgetMs / 1000 } : undefined;
