@@ -8,6 +8,7 @@ import { makeRng } from '../display/core.js';
 
 const RUN = '#ff2a2a';     // running — old-school red
 const DONE = '#37e0a0';    // solved — green
+const OVER = '#ff8a1e';    // over budget — alarm amber
 
 export class TimerDisplay {
   constructor(canvas) {
@@ -36,20 +37,26 @@ export class TimerDisplay {
   }
 
   // mmss = 4 chars (zero-padded minutes + seconds), e.g. "0042" → renders 00:42.
-  render(mmss, solved) {
+  // over = the staged countdown has passed zero → alarm color + a drawn leading minus sign.
+  render(mmss, solved, over) {
     if (!this.size()) return;
     const ctx = this.ctx, dpr = this.cv._dpr || 1;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const w = this.cv.width / dpr, h = this.cv.height / dpr;
     ctx.clearRect(0, 0, w, h);
     this.cv._transparent = true;
-    const color = solved ? DONE : RUN;
+    const color = solved ? DONE : (over ? OVER : RUN);
     starburst16.render(ctx, { ...this.p, transparent: true, text: mmss, color }, 0, makeRng(this.p.seed));
     // colon: two dots at the horizontal centre (= the gap between the 2nd and 3rd digit of MMSS).
     const cx = w / 2, rad = Math.max(1.3, h * 0.05);
     ctx.save();
     ctx.fillStyle = color; ctx.shadowColor = color; ctx.shadowBlur = this.p.glow;
     for (const dy of [-h * 0.14, h * 0.14]) { ctx.beginPath(); ctx.arc(cx, h / 2 + dy, rad, 0, Math.PI * 2); ctx.fill(); }
+    // minus sign for the over-budget (negative) countdown — a short bar to the left of the digits.
+    if (over && !solved) {
+      const barW = w * 0.05, barH = Math.max(2, h * 0.045), mx = w * 0.06, my = h / 2 - barH / 2;
+      ctx.fillRect(mx, my, barW, barH);
+    }
     ctx.restore();
   }
 }

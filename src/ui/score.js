@@ -5,10 +5,11 @@
 
 export const SCORE = {
   base: 100,
-  speedCap: 60,     // seconds beyond which the speed bonus is 0
-  speedMax: 700,    // speed points at an instant solve
-  fastUnder: 15,    // the "under 15 seconds" threshold
+  speedCap: 60,     // seconds beyond which the speed bonus is 0 (legacy path)
+  speedMax: 700,    // speed points at an instant solve (legacy path)
+  fastUnder: 15,    // the "under 15 seconds" threshold (legacy path)
   fastBonus: 250,
+  clockPts: 50,     // staged path: score points per second of clock remaining/over
   comboStep: 0.5,   // multiplier gained per consecutive perfect (1.0, 1.5, 2.0, …)
   flawlessBonus: 5000,
   perfectRunStep: 250,
@@ -41,19 +42,33 @@ export class ScoreKeeper {
     this.best = this._loadBest();
   }
 
-  // record a solved game (seconds elapsed + whether undo/redo was used). Returns a rich result.
-  record(seconds, undoUsed) {
+  // record a solved game. Legacy signature record(seconds, undoUsed) keeps the speed/fast formula.
+  // Staged signature record(seconds, undoUsed, { budget }) uses the countdown clock as the modifier.
+  record(seconds, undoUsed, opts = {}) {
     if (this.gameInRun >= SCORE.runLen) this._newRun();   // previous run finished → fresh run
 
     const t = Math.max(0, seconds);
-    const speed = Math.round(Math.max(0, SCORE.speedCap - t) / SCORE.speedCap * SCORE.speedMax);
-    const fast = t < SCORE.fastUnder ? SCORE.fastBonus : 0;
-    const raw = SCORE.base + speed + fast;
-    const perfect = t < SCORE.fastUnder && !undoUsed;
+    const staged = typeof opts.budget === 'number';
+
+    let raw, perfect, overBy = 0, parts;
+    if (staged) {
+      const timeLeft = opts.budget - t;                   // may be negative
+      const clock = Math.max(timeLeft, -SCORE.base / SCORE.clockPts); // clamp so raw floors at 0
+      raw = SCORE.base + clock * SCORE.clockPts;          // ≥ 0
+      perfect = timeLeft > 0 && !undoUsed;
+      overBy = Math.max(0, -timeLeft);
+      parts = { base: SCORE.base, clock: Math.round(clock * SCORE.clockPts) };
+    } else {
+      const speed = Math.round(Math.max(0, SCORE.speedCap - t) / SCORE.speedCap * SCORE.speedMax);
+      const fast = t < SCORE.fastUnder ? SCORE.fastBonus : 0;
+      raw = SCORE.base + speed + fast;
+      perfect = t < SCORE.fastUnder && !undoUsed;
+      parts = { base: SCORE.base, speed, fast };
+    }
 
     if (perfect) this.streak += 1; else this.streak = 0;
     const mult = perfect ? (1 + SCORE.comboStep * (this.streak - 1)) : 1;
-    const points = Math.round(raw * mult);
+    const points = Math.max(0, Math.round(raw * mult));
 
     this.gameInRun += 1;
     this.runTotal += points;
@@ -74,12 +89,12 @@ export class ScoreKeeper {
 
     const tier = perfect ? Math.min(this.streak, HYPE.length - 1) : 0;
     return {
-      t, points, perfect, mult, streak: this.streak,
+      t, points, perfect, mult, streak: this.streak, overBy,
       runTotal: this.runTotal, gameInRun: this.gameInRun, perfectsInRun: this.perfectsInRun,
       tier, callout: perfect ? { tier, label: HYPE[tier].label } : null,
       overlay: (perfect && this.streak >= SCORE.runLen) || (runComplete && flawless),
       runComplete, flawless, runBonus, summary,
-      parts: { base: SCORE.base, speed, fast },
+      parts,
     };
   }
 

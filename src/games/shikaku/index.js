@@ -79,10 +79,22 @@ const shikaku = {
     name: 'Shikaku',
     interaction: 'region-draw',
     requirements: { glyphSet: 'digits', needsOffState: false, needsRegionFill: true },
+    // Staged-countdown opt-in (see docs/superpowers/specs/2026-06-15-...). Only games that
+    // declare `stages` get the auto-ramp + countdown timer + clock scoring; others keep the
+    // legacy count-up timer and manual difficulty.
+    stages: {
+      time: { easy: 15, medium: 20, hard: 25 },   // countdown budget per stage, seconds
+      // Map the upcoming game-in-run index n (1..10) to a difficulty.
+      curveForGame(n) {
+        if (n <= 3) return 'easy';
+        if (n <= 7) return 'medium';
+        return 'hard';
+      },
+    },
   },
 
   defaultParams() {
-    return { seed: 1, size: 7, difficulty: 'easy' };
+    return { seed: 1, difficulty: 'easy' };
   },
 
   // newPuzzle(params, rng): { params, playState, solution }. We generate a uniquely-solvable

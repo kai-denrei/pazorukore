@@ -72,15 +72,18 @@ function chooseAnchor(piece, rng) {
   return { r, c };
 }
 
-// Difficulty presets → grid size + size band for the random tiling. Smaller maxArea ⇒ more, smaller
-// rectangles ⇒ generally more forced (easier) deductions; larger ⇒ harder.
+// Difficulty presets → grid size + size band for the random tiling. NOTE (staged-countdown rework):
+// difficulty now reads "fewer, larger rectangles = easier; many small rectangles = harder", the
+// REVERSE of the original engine default. easy = a few big anchors (fast to scan); hard = lots of
+// 2/3/4s (many deductions). Because a piece larger than maxArea always splits, maxAreaHi is a hard
+// upper bound on every region's area.
 // Each preset gives a grid size + a RANGE for the per-puzzle maximum rectangle area. generate()
-// picks a random maxArea in [maxAreaLo, maxAreaHi] per puzzle (seeded), so the number and size of
-// anchors varies board to board — some chunky (few big rectangles up to maxAreaHi), some fine-grained.
+// picks a random maxArea in [maxAreaLo, maxAreaHi] per puzzle (seeded), so size/number of anchors
+// varies board to board within the stage's character.
 export const PRESETS = {
-  easy: { size: 8, minArea: 2, maxAreaLo: 5, maxAreaHi: 12 },
-  medium: { size: 9, minArea: 2, maxAreaLo: 6, maxAreaHi: 16 },
-  hard: { size: 11, minArea: 3, maxAreaLo: 8, maxAreaHi: 22 },
+  easy: { size: 6, minArea: 5, maxAreaLo: 8, maxAreaHi: 12 },
+  medium: { size: 8, minArea: 2, maxAreaLo: 5, maxAreaHi: 9 },
+  hard: { size: 9, minArea: 2, maxAreaLo: 3, maxAreaHi: 4 },
 };
 
 export function presetFor(params) {
