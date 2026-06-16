@@ -6,8 +6,13 @@
 
 import { EVENTS } from '../core/events.js';
 import { getCell } from '../core/grid.js';
+import { makeRegionTint } from '../skins/_region-tint.js';
 
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)');
+
+// Shared Fillomino value-region tint (skin-agnostic; coloured by the cell value via the skin's
+// `tint` palette). Stateless across boards, so a single instance is fine.
+const regionTint = makeRegionTint();
 
 export class Board {
   constructor(boardEl, engine, skin) {
@@ -136,6 +141,12 @@ export class Board {
     if (st.loop && this.skin.loop && this.skin.loop.paint) {
       this.skin.loop.paint(this.gctx, g, st.loop, { conflicts: this.engine.ui.conflicts, t: now });
     }
+    // Fillomino: colour-code each value-region (flood-filled same-value blob) by its value, using the
+    // skin's `tint` palette. Skin-agnostic — painted here so all three skins get it. Updates live
+    // because repaintGrid runs on the grid-pulse (futuristic) and on each cell change (see _subscribe).
+    if (g.game === 'fillomino' && this.skin.tint) {
+      regionTint.paint(this.gctx, g, this.skin.tint);
+    }
   }
 
   // current attached-bridge sum per island id (for the bridge renderer's satisfied/over colouring).
@@ -206,7 +217,13 @@ export class Board {
   _subscribe() {
     const on = (n, fn) => this._subs.push(this.engine.on(n, fn));
     const regionKey = (p) => (p && (p.regionId != null ? p.regionId : p.clueId));
-    on(EVENTS.cellChanged, ({ id }) => this.paintCell(id));
+    on(EVENTS.cellChanged, ({ id }) => {
+      this.paintCell(id);
+      // Fillomino's value-region tint lives on the grid layer and depends on the whole board, so a
+      // single cell change can re-shape neighbouring regions. Repaint the grid layer to keep the tint
+      // live even on skins whose region renderer isn't animated (retro/pastel don't run a grid-pulse).
+      if (this.geom().game === 'fillomino' && this.skin.tint) this.repaintGrid();
+    });
     on(EVENTS.selectionChanged, ({ from, to }) => { if (from) this.paintCell(from); if (to) this.paintCell(to); });
     on(EVENTS.regionValidated, (p) => { const k = regionKey(p); if (k != null) this.validatedRegions.add(k); this.repaintAll(); });
     on(EVENTS.regionInvalid, (p) => { const k = regionKey(p); if (k != null) this.validatedRegions.delete(k); this.repaintAll(); });

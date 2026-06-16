@@ -21,6 +21,13 @@ const REGION = {
   grid: '#c9bfae', accent: '#9fc2b6', validated: '#a9d8c4',
   fill: '#e7d8e0', panel: '#fbf6ec',
 };
+// Fillomino value-region tint (skin-agnostic helper reads this): soft pastel hue per value, mirroring
+// region-soft's VAL_COLORS. The board is LIGHT, so use a slightly stronger wash so hues read on cream.
+const TINT = {
+  2: '#e79db1', 3: '#8fbfe6', 4: '#9fd3a8', 5: '#f0c38a',
+  6: '#c2a3e0', 7: '#d9cf84', 8: '#7fcfc6', 9: '#ec9d86',
+  alpha: 0.22, edgeAlpha: 0.5,
+};
 
 // OKLCH chrome/board tokens (§8.3) — set on the board root by applyPalette. LIGHT surface (not dark!).
 const TOKENS = {
@@ -57,6 +64,7 @@ export const pastel = {
   glyph,
   region,
   bridge,
+  tint: TINT,
   renderPolicy: (role) => (role === 'given' || role === 'fillable' || role === 'clue') ? 'device' : 'plain',
   applyPalette(rootEl) {
     for (const [k, v] of Object.entries(TOKENS)) rootEl.style.setProperty(k, v);

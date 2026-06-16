@@ -13,6 +13,13 @@ const BRIDGE = { line: '#ffc24a', ring: '#c8782a', ringDone: '#ffd27a', error: '
 // Amberglass direction: warm-amber glow on warm-black; given = brighter warm white, error = warm red.
 const GLYPH = { on: '#ffc24a', given: '#ffe7c2', error: '#ff5a3c', off: '#5a3a16', bg: '#0a0702', edge: '#ff8a1a' };
 const REGION = { grid: '#c8782a', accent: '#ff9a3a', validated: '#ffd27a', fill: '#3a2208', validatedFill: '#5a3410' };
+// Fillomino value-region tint (skin-agnostic helper reads this): warm-amber hue per value, mirroring
+// region-warm's VAL_COLORS so the Fillomino tint matches the rest of the Retro skin.
+const TINT = {
+  2: '#ffc24a', 3: '#ff7a3a', 4: '#ffd76a', 5: '#ff5a4a',
+  6: '#e8a04a', 7: '#c2e07a', 8: '#7fd0c0', 9: '#ff9ad0',
+  alpha: 0.15, edgeAlpha: 0.36,
+};
 
 // OKLCH chrome/board tokens (§8.3) — warm amber/orange hues. Set on the board root by applyPalette.
 const TOKENS = {
@@ -49,6 +56,7 @@ export const retro = {
   glyph,
   region,
   bridge,
+  tint: TINT,
   renderPolicy: (role) => (role === 'given' || role === 'fillable' || role === 'clue') ? 'device' : 'plain',
   applyPalette(rootEl) {
     for (const [k, v] of Object.entries(TOKENS)) rootEl.style.setProperty(k, v);

@@ -13,6 +13,13 @@ const REGION = { grid: '#0db3a3', accent: '#00e5d0', validated: '#8affe8', fill:
 const BRIDGE = { line: '#1bf0c8', ring: '#0db3a3', ringDone: '#8affe8', error: '#ff556b', disc: '#091013' };
 // Masyu: loop line + pearl square colours (black pearl rendered in teal per the design).
 const MASYU = { line: '#1bf0c8', white: '#eaffff', black: '#00e5d0', error: '#ff556b' };
+// Fillomino value-region tint (skin-agnostic helper reads this): neon hue per value, mirroring
+// region-neon's VAL_COLORS. A touch more glow than the other skins → slightly higher edge alpha.
+const TINT = {
+  2: '#1bf0c8', 3: '#ff5db0', 4: '#ffb000', 5: '#5cff7a',
+  6: '#3aa0ff', 7: '#c77dff', 8: '#ff7a3a', 9: '#7dffe8',
+  alpha: 0.16, edgeAlpha: 0.4,
+};
 
 // OKLCH chrome/board tokens (§8.3) — set on the board root by applyPalette.
 const TOKENS = {
@@ -51,6 +58,7 @@ export const futuristic = {
   region,
   bridge,
   loop,
+  tint: TINT,
   // Masyu pearls (role 'clue' with value 'B'/'W') are drawn on the grid layer by the loop renderer,
   // NOT as glyphs — route them to 'plain' so no 16-seg glyph is painted over them (the 16-seg glyph
   // can't render 'B'/'W' anyway). Bridges islands (numeric clue value) still get a 'device' glyph.

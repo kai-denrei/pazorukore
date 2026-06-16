@@ -315,8 +315,13 @@ function openSettings() {
     <div class="pick-row">
       <button class="pick" data-a="rm" aria-pressed="${document.body.classList.contains('force-reduced')}">reduce motion</button>
       <button class="pick" data-a="haptics" aria-pressed="${app.haptics !== false}">haptics</button>
+    </div>
+    <p class="muted">session</p>
+    <div class="pick-row">
+      <button class="pick" data-a="hiscores">High scores</button>
     </div>`);
   const s = document.getElementById('settings');
+  s.querySelector('[data-a="hiscores"]').onclick = () => { s.hidden = true; openHighScores(); };
   s.querySelector('[data-a="solve"]').onclick = () => { s.hidden = true; revealSolution(); };
   s.querySelector('[data-a="hint"]').onclick = () => { s.hidden = true; if (app.engine && app.engine.hint) app.engine.hint(); };
   s.querySelectorAll('[data-diff]').forEach((b) => b.onclick = () => { s.hidden = true; newGameWith({ difficulty: b.dataset.diff }); });
@@ -526,6 +531,41 @@ function showPerfectOverlay(r) {
   el.onclick = () => { el.hidden = true; };
 }
 
+// Session high-scores markup, reused by the recap section and the standalone sheet. Built on the
+// existing .recap-table / .muted styling so it renders consistently with the rest of the sheets.
+// `best` is the persisted ScoreKeeper.best; `highlight` (a run total) marks the freshly-set best run
+// with a NEW badge (only the first matching row, so duplicate totals don't all light up).
+function highScoresHTML(best, highlight) {
+  const fastest = (best && best.fastestRound != null) ? best.fastestRound : null;
+  const runs = (best && best.topRuns) ? best.topRuns : [];
+  let marked = false;
+  const runsList = runs.length
+    ? `<table class="recap-table"><tbody>${runs.map((v, i) => {
+        const isNew = !marked && highlight != null && v === highlight;
+        if (isNew) marked = true;
+        return `<tr class="${isNew ? 'rc-perfect' : ''}"><td class="rc-n">#${i + 1}</td><td class="rc-res">${isNew ? 'new best' : ''}</td><td class="rc-pts">${v.toLocaleString()}</td></tr>`;
+      }).join('')}</tbody></table>`
+    : `<p class="muted">no completed runs yet</p>`;
+  return `
+    <div class="recap-total"><span>FASTEST ROUND</span><span class="rc-total-val">${fastest != null ? Math.round(fastest) + 's' : '—'}</span></div>
+    <p class="muted">top runs</p>
+    ${runsList}`;
+}
+
+// Standalone high-scores sheet (Settings → High scores) — works outside a run, reads app.score.best.
+// Reuses the hidden #recap overlay container; openSheet rewrites its innerHTML each time.
+function openHighScores() {
+  const best = (app.score && app.score.best) ? app.score.best : { fastestRound: null, topRuns: [] };
+  openSheet('recap', `
+    <h2>High scores</h2>
+    <p class="muted">this session · persisted</p>
+    ${highScoresHTML(best, null)}
+    <div class="sheet-links"><button class="link" data-a="settings">Settings</button></div>`);
+  const el = document.getElementById('recap');
+  const back = el.querySelector('[data-a="settings"]');
+  if (back) back.onclick = () => { el.hidden = true; openSettings(); };
+}
+
 // End-of-run recap dashboard: a per-round table (R# · time · result) + the run total, after a 10/10 run.
 function showRecap(r) {
   const sum = r.summary; if (!sum) return;
@@ -535,6 +575,8 @@ function showRecap(r) {
     return `<tr class="${rd.perfect ? 'rc-perfect' : ''}"><td class="rc-n">R${rd.n}</td><td class="rc-t">${time}</td><td class="rc-res">${res}</td><td class="rc-pts">+${rd.points.toLocaleString()}</td></tr>`;
   }).join('');
   const isBest = sum.total > 0 && sum.total >= (sum.best || 0);
+  // high-scores reads ScoreKeeper.best (already updated by record()); highlight this run if it's a new top-3 entry.
+  const hsBest = (app.score && app.score.best) ? app.score.best : { fastestRound: sum.fastestRound, topRuns: sum.topRuns };
   openSheet('recap', `
     <div class="recap-sheet">
       <h2 class="recap-title ${sum.flawless ? 'is-flawless' : ''}">${sum.flawless ? '完璧 FLAWLESS' : 'RUN RECAP'}</h2>
@@ -542,6 +584,8 @@ function showRecap(r) {
       <table class="recap-table"><tbody>${rows}</tbody></table>
       <div class="recap-total"><span>TOTAL</span><span class="rc-total-val${isBest ? ' rc-best' : ''}">${sum.total.toLocaleString()}</span></div>
       <p class="muted recap-best">${isBest ? '★ NEW BEST RUN' : `★ best ${(sum.best || 0).toLocaleString()}`}</p>
+      <p class="muted hs-head">high scores</p>
+      ${highScoresHTML(hsBest, sum.total)}
       <button class="recap-new" type="button" data-recap-new>NEW RUN ▸</button>
     </div>`);
   const el = document.getElementById('recap');

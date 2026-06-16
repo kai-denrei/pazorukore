@@ -62,6 +62,24 @@ export function makeGlyph16(palette) {
     return out;
   }
 
+  // celebration shaping helpers (kept local to the 16-seg adapter) -----------------------------
+  // Overall LOW→HIGH→LOW glow arc across the whole solve timeline: a sine hump peaking at prog≈0.5
+  // (parabolic-ish), lifted off zero so the start/end still read as "lit", not dead. Drives the
+  // shadowBlur/bloom/brightness swell so the board breathes brighter through the middle of the win.
+  function glowArc(prog) {
+    const t = Math.max(0, Math.min(1, prog));
+    const hump = Math.sin(t * Math.PI);          // 0 → 1 → 0, peak at 0.5
+    return 0.28 + 0.72 * (hump * hump);          // squared for a fuller, rounder swell; floor keeps it alive
+  }
+
+  // Per-digit STRIKE spike: a crisp pop right as each digit lands (within-beat fraction f near 0),
+  // decaying fast so the 1→9 cycle reads as discrete struck steps rather than a smear. Exponential
+  // falloff = sharper "flipper" than the old linear (1 - f).
+  function strikeSpike(f) {
+    const ff = Math.max(0, Math.min(1, f));
+    return Math.exp(-ff * 7);                     // 1 at landing, ~0.09 a third of the way through the beat
+  }
+
   function drawPencil(ctx, box, pencil) {
     const n = box.w, cell = n / 3;
     ctx.save();
@@ -100,12 +118,16 @@ export function makeGlyph16(palette) {
         const spread = 0.42;                                       // fraction of the timeline the sweep spans
         const cellProg = Math.max(0, Math.min(1, (anim.progress - diag * spread) / (1 - spread)));
         const { ch: cch, f } = celebrate(cellProg);
-        const env = Math.max(0.2, 1 - f);
+        // crisper per-digit strike: a sharp pop at each landing (f→0), exp-decaying through the beat
+        const strike = strikeSpike(f);
+        const env = 0.2 + 0.8 * strike;                             // baseline lit + strike spike on top
         const edge = Math.max(0, 1 - Math.abs(anim.progress - diag * spread) * 6); // crisp leading edge
+        // overall LOW→HIGH→LOW glow swell across the whole celebration (peak ~progress 0.5)
+        const arc = glowArc(anim.progress);
         const cp = { ...p, transparent: true, text: cch, color: palette.on,
-          glow: p.glow * (1 + env * 1.7 + edge * 1.3),
-          coreWhite: Math.min(100, p.coreWhite + env * 22 + edge * 22),
-          bleed: Math.min(100, p.bleed + env * 34) };
+          glow: p.glow * (1 + (env * 1.7 + edge * 1.3 + strike * 1.1) * arc),
+          coreWhite: Math.min(100, p.coreWhite + (env * 22 + edge * 22 + strike * 18) * arc),
+          bleed: Math.min(100, p.bleed + (env * 34 + strike * 16) * arc) };
         const oc2 = offCtx(box, dpr);
         starburst16.render(oc2, cp, 0, makeRng(p.seed));
         ctx.drawImage(off, box.x, box.y, box.w, box.h);

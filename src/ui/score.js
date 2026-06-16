@@ -71,6 +71,9 @@ export class ScoreKeeper {
     const mult = perfect ? (1 + SCORE.comboStep * (this.streak - 1)) : 1;
     const points = Math.max(0, Math.round(raw * mult));
 
+    // session high-score: fastest round ever (a real solve only — t > 0)
+    if (t > 0) this.best.fastestRound = this.best.fastestRound == null ? t : Math.min(this.best.fastestRound, t);
+
     this.gameInRun += 1;
     this.runTotal += points;
     if (perfect) this.perfectsInRun += 1;
@@ -83,7 +86,14 @@ export class ScoreKeeper {
       flawless = this.perfectsInRun >= SCORE.runLen;
       runBonus = flawless ? SCORE.flawlessBonus : this.perfectsInRun * SCORE.perfectRunStep;
       this.runTotal += runBonus;
-      summary = { total: this.runTotal, perfects: this.perfectsInRun, flawless, bonus: runBonus, best: this.best.runScore || 0, rounds: this.rounds.slice() };
+      // session high-score: keep the top-3 run totals, descending
+      this.best.topRuns = [...(this.best.topRuns || []), this.runTotal].sort((a, b) => b - a).slice(0, 3);
+      summary = {
+        total: this.runTotal, perfects: this.perfectsInRun, flawless, bonus: runBonus,
+        best: this.best.runScore || 0, rounds: this.rounds.slice(),
+        fastestRound: this.best.fastestRound != null ? this.best.fastestRound : null,
+        topRuns: this.best.topRuns.slice(),
+      };
     }
 
     if (this.streak > (this.best.streak || 0)) this.best.streak = this.streak;
@@ -103,7 +113,10 @@ export class ScoreKeeper {
 
   _newRun() { this.gameInRun = 0; this.runTotal = 0; this.perfectsInRun = 0; this.rounds = []; } // streak persists across runs
 
-  _loadBest() { try { return JSON.parse(localStorage.getItem(LS) || 'null') || { runScore: 0, streak: 0 }; } catch (_) { return { runScore: 0, streak: 0 }; } }
+  _loadBest() {
+    const def = { runScore: 0, streak: 0, fastestRound: null, topRuns: [] };
+    try { return { ...def, ...(JSON.parse(localStorage.getItem(LS) || 'null') || {}) }; } catch (_) { return { ...def }; }
+  }
   _saveBest() { try { localStorage.setItem(LS, JSON.stringify(this.best)); } catch (_) {} }
 }
 
