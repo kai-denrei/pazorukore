@@ -238,3 +238,22 @@ test('full solve path: committing every hint reaches isSolved', () => {
   }
   assert.equal(shikaku.isSolved(state), true, 'committing hints solves the puzzle');
 });
+
+test('meta.stages exposes per-stage countdown budgets', () => {
+  assert.equal(shikaku.meta.stages.time.easy, 15);
+  assert.equal(shikaku.meta.stages.time.medium, 20);
+  assert.equal(shikaku.meta.stages.time.hard, 25);
+});
+
+test('meta.stages.curveForGame ramps easy(1-3) → medium(4-7) → hard(8-10)', () => {
+  const curve = shikaku.meta.stages.curveForGame;
+  assert.deepEqual([1, 2, 3].map(curve), ['easy', 'easy', 'easy']);
+  assert.deepEqual([4, 5, 6, 7].map(curve), ['medium', 'medium', 'medium', 'medium']);
+  assert.deepEqual([8, 9, 10].map(curve), ['hard', 'hard', 'hard']);
+  assert.equal(curve(11), 'hard');
+  assert.equal(curve(0), 'easy');
+});
+
+test('defaultParams no longer pins size (preset size wins)', () => {
+  assert.equal(shikaku.defaultParams().size, undefined);
+});
