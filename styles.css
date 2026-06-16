@@ -389,6 +389,31 @@ body {
 .pick.is-disabled { opacity: 0.32; cursor: not-allowed; text-decoration: line-through; }
 .pick.is-disabled:hover { border-color: var(--chrome-line); color: var(--chrome-ink); }
 
+/* per-game "i" in the picker: a game button paired with its rules-info button */
+.pick-wrap { display: inline-flex; align-items: stretch; gap: 0; }
+.pick-wrap .pick { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.pick-i {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; padding: 0; cursor: pointer;
+  background: var(--chrome-bg); color: var(--chrome-ink);
+  border: 1px solid var(--chrome-line); border-left: 0;
+  border-radius: 0 9px 9px 0; font-family: var(--mono); font-size: 13px; font-style: italic; font-weight: 700;
+}
+.pick-i:hover { border-color: var(--chrome-accent); color: var(--chrome-accent); }
+
+/* rules ("how to play") sheet — laconic, no exposition */
+.rules-sheet .rules-title { display: flex; align-items: baseline; gap: 10px; margin: 0 0 10px; }
+.rules-sheet .rules-tag { font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--chrome-accent); }
+.rules-list { list-style: none; padding: 0; margin: 0 0 14px; display: flex; flex-direction: column; gap: 7px; }
+.rules-list li { position: relative; padding-left: 18px; line-height: 1.4; }
+.rules-list li::before { content: "›"; position: absolute; left: 2px; color: var(--chrome-accent); font-weight: 700; }
+.rules-win {
+  margin: 0; padding: 10px 12px; border-radius: 9px;
+  background: color-mix(in srgb, var(--chrome-accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--chrome-accent) 40%, transparent);
+}
+.rules-win b { font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--chrome-accent); display: block; margin-bottom: 3px; }
+
 /* pipeline / roadmap sheet */
 .pl-list { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 6px; }
 .pl-card { border: 1px solid var(--chrome-line); border-left-width: 3px; border-radius: 10px; padding: 9px 12px; background: var(--chrome-bg); }

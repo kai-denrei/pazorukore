@@ -7,6 +7,7 @@ import { renderVersionGlyphs } from './version-badge.js';
 import { initPWA } from './pwa.js';
 import { TimerDisplay } from './timer-display.js';
 import { ScoreKeeper } from './score.js';
+import { RULES } from './rules.js';
 import { Engine } from '../core/engine.js';
 import { EVENTS } from '../core/events.js';
 import { negotiate } from '../core/capabilities.js';
@@ -216,7 +217,7 @@ function openSheet(id, html) {
 
 function openPicker() {
   const games = Object.keys(GAME_LOADERS), skins = Object.keys(SKIN_LOADERS);
-  const gameOpt = (sel) => games.map((x) => `<button class="pick" data-v="${x}"${x === sel ? ' aria-pressed="true"' : ''}>${x}</button>`).join('');
+  const gameOpt = (sel) => games.map((x) => `<span class="pick-wrap"><button class="pick" data-v="${x}"${x === sel ? ' aria-pressed="true"' : ''}>${x}</button>${RULES[x] ? `<button class="pick-i" data-i="${x}" title="${x} rules" aria-label="${x} rules">i</button>` : ''}</span>`).join('');
   openSheet('picker', `
     <h2>Game × Skin</h2>
     <p class="muted">A — game</p><div class="pick-row" id="pick-games">${gameOpt(app.gameId)}</div>
@@ -240,12 +241,25 @@ function openPicker() {
     if (skinDisabled(g, s)) s = firstEnabledSkin(g); // selected skin unavailable for the new game → fall back
     renderSkins();
   });
+  pk.querySelectorAll('#pick-games .pick-i').forEach((b) => b.onclick = (e) => { e.stopPropagation(); openRules(b.dataset.i); });
   renderSkins();
   pk.querySelector('[data-a="pipeline"]').onclick = () => { pk.hidden = true; openPipeline(); };
   pk.querySelector('[data-a="tune"]').onclick = () => { pk.hidden = true; toggleAdmin(); };
   pk.querySelector('[data-a="about"]').onclick = () => { pk.hidden = true; openAbout(); };
   pk.querySelector('[data-a="settings"]').onclick = () => { pk.hidden = true; openSettings(); };
   pk.querySelector('[data-close]').onclick = () => { pk.hidden = true; mountGame(g, s); };
+}
+
+// "how to play" — laconic rules for a game, opened by the picker/pipeline "i" and the chrome "i".
+function openRules(key) {
+  const r = RULES[key];
+  if (!r) return;
+  openSheet('rules', `
+    <div class="rules-sheet">
+      <div class="rules-title"><h2>${r.title}</h2><span class="rules-tag">how to play</span></div>
+      <ul class="rules-list">${r.lines.map((l) => `<li>${l}</li>`).join('')}</ul>
+      <p class="rules-win"><b>Win</b>${r.win}</p>
+    </div>`);
 }
 
 function openAbout() {
@@ -297,22 +311,22 @@ function newGameWith(extra) {
 
 // Pipeline / roadmap: what's shipped + what's next (the §18 horizon), each game briefly explained.
 const SHIPPED_GAMES = [
-  { n: 'Sudoku', i: 'digit-entry', d: 'Classic 9×9 Latin square — fill so every row, column and 3×3 box holds 1–9 with no repeats.' },
-  { n: 'Shikaku', i: 'region-draw', d: 'Divide the grid into rectangles; each rectangle’s area equals the clue number it contains.' },
-  { n: 'Bridges', i: 'bridge-draw', d: 'Connect numbered islands with bridges (1 or 2 between a pair, never crossing) so each island has exactly its number of bridges and the whole network is one connected web. (Tatham’s Bridges / Hashiwokakero.)' },
+  { n: 'Sudoku', k: 'sudoku', i: 'digit-entry', d: 'Classic 9×9 Latin square — fill so every row, column and 3×3 box holds 1–9 with no repeats.' },
+  { n: 'Shikaku', k: 'shikaku', i: 'region-draw', d: 'Divide the grid into rectangles; each rectangle’s area equals the clue number it contains.' },
+  { n: 'Bridges', k: 'bridges', i: 'bridge-draw', d: 'Connect numbered islands with bridges (1 or 2 between a pair, never crossing) so each island has exactly its number of bridges and the whole network is one connected web. (Tatham’s Bridges / Hashiwokakero.)' },
 ];
 const NEXT_GAMES = [
-  { n: 'Fillomino', i: 'region-paint', d: 'Every cell holds a number; carve the grid into regions where a region of size N is filled entirely with N. The densest glyph showcase.' },
-  { n: 'KenKen / Killer', i: 'digit + cages', d: 'A Latin-square base with arithmetic cages — the numbers in each cage must reach a target via +, −, × or ÷.' },
-  { n: 'Slitherlink', i: 'edge-draw', d: 'Draw a single closed loop along the grid lines; each clue says how many of its four sides the loop uses. Needs a new edge-draw interaction.' },
-  { n: 'Pearl', i: 'loop-draw', d: 'Draw one closed loop through the centres of adjacent squares: every black circle must be a corner (and not touch another corner), every white circle a straight that meets at least one corner. Drag between squares to lay or lift loop segments. (Tatham’s Pearl / Masyu.)' },
-  { n: 'Nurikabe', i: 'cell-shade', d: 'Shade cells into one connected “sea” so every clue becomes an island of exactly that many unshaded cells.' },
-  { n: 'Star Battle', i: 'star-place', d: 'Place stars so every row, column and region has exactly N, with no two stars touching.' },
+  { n: 'Fillomino', k: 'fillomino', i: 'region-paint', d: 'Every cell holds a number; carve the grid into regions where a region of size N is filled entirely with N. The densest glyph showcase.' },
+  { n: 'KenKen / Killer', k: 'kenken', i: 'digit + cages', d: 'A Latin-square base with arithmetic cages — the numbers in each cage must reach a target via +, −, × or ÷.' },
+  { n: 'Slitherlink', k: 'slitherlink', i: 'edge-draw', d: 'Draw a single closed loop along the grid lines; each clue says how many of its four sides the loop uses. Needs a new edge-draw interaction.' },
+  { n: 'Pearl', k: 'pearl', i: 'loop-draw', d: 'Draw one closed loop through the centres of adjacent squares: every black circle must be a corner (and not touch another corner), every white circle a straight that meets at least one corner. Drag between squares to lay or lift loop segments. (Tatham’s Pearl / Masyu.)' },
+  { n: 'Nurikabe', k: 'nurikabe', i: 'cell-shade', d: 'Shade cells into one connected “sea” so every clue becomes an island of exactly that many unshaded cells.' },
+  { n: 'Star Battle', k: 'starbattle', i: 'star-place', d: 'Place stars so every row, column and region has exactly N, with no two stars touching.' },
   { n: 'Word / alnum', i: 'v2 glyphs', d: '16-segment & dot-matrix skins unlock letters; the capability negotiation already gates which skins can host alphabetic games.' },
 ];
 
 function openPipeline() {
-  const card = (g, cls) => `<div class="pl-card ${cls}"><div class="pl-head"><span class="pl-name">${g.n}</span><span class="pl-tag">${g.i}</span></div><p class="pl-desc">${g.d}</p></div>`;
+  const card = (g, cls) => `<div class="pl-card ${cls}"><div class="pl-head"><span class="pl-name">${g.n}</span>${g.k && RULES[g.k] ? `<button class="pick-i pl-i" data-i="${g.k}" title="${g.n} rules" aria-label="${g.n} rules">i</button>` : ''}<span class="pl-tag">${g.i}</span></div><p class="pl-desc">${g.d}</p></div>`;
   openSheet('pipeline', `
     <h2>Pipeline</h2>
     <p class="muted">shipped — playable now, any game × any skin</p>
@@ -320,6 +334,8 @@ function openPipeline() {
     <p class="muted">next up — the roadmap</p>
     <div class="pl-list">${NEXT_GAMES.map((g) => card(g, 'next')).join('')}</div>
     <p class="muted pl-foot">3 skins shipped: Futuristic (16-segment) · Retro (Lixie tube) · Pastel (split-flap). Any skin wears any game.</p>`);
+  const pl = document.getElementById('pipeline');
+  pl.querySelectorAll('.pl-i').forEach((b) => b.onclick = () => openRules(b.dataset.i));
 }
 
 // ── elapsed-time clock — rendered as a 16-segment red display (starts on load, stops on solve) ──
@@ -431,6 +447,7 @@ function init() {
   initPWA();
   document.getElementById('btn-menu').onclick = openPicker;
   document.getElementById('btn-pipeline').onclick = openPipeline;
+  const rb = document.getElementById('btn-rules'); if (rb) rb.onclick = () => openRules(app.gameId);
   document.getElementById('btn-new').onclick = () => newGameWith({});
   window.addEventListener('resize', () => { if (_timer.disp) renderTimer(); });
   document.getElementById('btn-menu').addEventListener('contextmenu', (e) => e.preventDefault());
@@ -439,6 +456,8 @@ function init() {
   if (sheet === 'about') setTimeout(openAbout, 400);
   else if (sheet === 'settings') setTimeout(openSettings, 400);
   else if (sheet === 'pipeline') setTimeout(openPipeline, 400);
+  else if (sheet === 'rules') setTimeout(() => openRules(app.gameId), 400);
+  else if (sheet === 'picker') setTimeout(openPicker, 400);
   if (q.has('pad')) setTimeout(() => {
     const c = app.engine.current().grid.cells.find((x) => x.role === 'fillable' && x.value == null);
     if (c && app.interaction && app.interaction._openPad) { app.interaction.select(c.id); app.interaction._openPad(c.id, window.innerWidth / 2, window.innerHeight / 2); }
