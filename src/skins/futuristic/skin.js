@@ -61,6 +61,7 @@ export const futuristic = {
   loop,
   tint: TINT,
   cage: { line: '#00e5d0', text: '#cdeeff' },   // KenKen cage outline + clue label
+  slither: { line: '#1bf0c8', dot: 'rgba(120,200,210,0.5)' },   // Slitherlink loop + lattice dots
   // Masyu pearls (role 'clue' with value 'B'/'W') are drawn on the grid layer by the loop renderer,
   // NOT as glyphs — route them to 'plain' so no 16-seg glyph is painted over them (the 16-seg glyph
   // can't render 'B'/'W' anyway). Bridges islands (numeric clue value) still get a 'device' glyph.

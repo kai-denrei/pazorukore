@@ -59,6 +59,7 @@ export const retro = {
   bridge,
   tint: TINT,
   cage: { line: '#ffb86b', text: '#ffe6c0' },   // KenKen cage outline + clue label (warm)
+  slither: { line: '#ffb86b', dot: 'rgba(255,200,140,0.5)' },   // Slitherlink loop + lattice dots (warm)
   renderPolicy: (role) => (role === 'given' || role === 'fillable' || role === 'clue') ? 'device' : 'plain',
   applyPalette(rootEl) {
     for (const [k, v] of Object.entries(TOKENS)) rootEl.style.setProperty(k, v);

@@ -8,6 +8,7 @@ import { EVENTS } from '../core/events.js';
 import { getCell } from '../core/grid.js';
 import { makeRegionTint } from '../skins/_region-tint.js';
 import { makeCageRenderer } from '../skins/_cage.js';
+import { makeSlitherRenderer } from '../skins/_slither.js';
 
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)');
 
@@ -16,6 +17,8 @@ const REDUCED = matchMedia('(prefers-reduced-motion: reduce)');
 const regionTint = makeRegionTint();
 // Shared KenKen cage outline + clue-label renderer (skin-agnostic; static cage structure).
 const cageRenderer = makeCageRenderer();
+// Shared Slitherlink loop renderer (dot lattice + neon loop edges; skin-agnostic).
+const slitherRenderer = makeSlitherRenderer();
 
 export class Board {
   constructor(boardEl, engine, skin) {
@@ -148,8 +151,13 @@ export class Board {
       this.skin.bridge.paint(this.gctx, g, st.bridges, { conflicts: this.engine.ui.conflicts, sums: this._bridgeSums(st), t: now });
     }
     // Masyu: the loop renderer draws the closed loop (under) + the pearl squares (over) on the grid layer.
-    if (st.loop && this.skin.loop && this.skin.loop.paint) {
+    if (st.loop && g.game === 'masyu' && this.skin.loop && this.skin.loop.paint) {
       this.skin.loop.paint(this.gctx, g, st.loop, { conflicts: this.engine.ui.conflicts, t: now });
+    }
+    // Slitherlink: the loop runs on the DOT lattice (cell corners) — a different graph than Masyu's
+    // cell-centre loop — so a dedicated skin-agnostic renderer draws the dots + neon edges.
+    if (st.loop && g.game === 'slitherlink') {
+      slitherRenderer.paint(this.gctx, g, st.loop, this.skin.slither || {});
     }
     // Fillomino: colour-code each value-region (flood-filled same-value blob) by its value, using the
     // skin's `tint` palette. Skin-agnostic — painted here so all three skins get it. Updates live

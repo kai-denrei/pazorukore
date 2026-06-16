@@ -11,7 +11,7 @@
   "background_color": "#08080a",
   "theme_color": "#08080a",
   "categories": ["games", "puzzle"],
-  "games": ["sudoku", "shikaku", "bridges", "masyu", "fillomino", "kenken"],
+  "games": ["sudoku", "shikaku", "bridges", "masyu", "fillomino", "kenken", "slitherlink"],
   "skins": ["futuristic", "retro", "pastel"],
   "dexipurei_galore": "vendored@2026-06",
   "icons": [

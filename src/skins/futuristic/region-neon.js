@@ -109,7 +109,7 @@ export function makeRegionNeon(palette) {
       const box = geom.box || (geom.rows % 3 === 0 ? 3 : 0);
       // shikaku/bridges/masyu all want the all-OFF "ghost lattice" (no lit gridlines); the loop and
       // pearls (masyu) or region membranes (shikaku) carry the glow on top.
-      const sudoku = geom.game === 'sudoku', shikaku = geom.game === 'shikaku' || geom.game === 'bridges' || geom.game === 'masyu' || geom.game === 'kenken';
+      const sudoku = geom.game === 'sudoku', shikaku = geom.game === 'shikaku' || geom.game === 'bridges' || geom.game === 'masyu' || geom.game === 'kenken' || geom.game === 'slitherlink';
       const TH = Math.max(1.5, first.w * (p.thickness / 100));
       const ins = TH;                       // notch inset at vertices
       const glow = glowAt(t == null ? 0 : t);

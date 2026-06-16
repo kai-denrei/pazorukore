@@ -67,6 +67,7 @@ export const pastel = {
   bridge,
   tint: TINT,
   cage: { line: '#5a6b8c', text: '#3a4a66' },   // KenKen cage outline + clue label (soft, dark ink on cream)
+  slither: { line: '#5a6b8c', dot: 'rgba(90,107,140,0.55)' },   // Slitherlink loop + lattice dots (slate)
   renderPolicy: (role) => (role === 'given' || role === 'fillable' || role === 'clue') ? 'device' : 'plain',
   applyPalette(rootEl) {
     for (const [k, v] of Object.entries(TOKENS)) rootEl.style.setProperty(k, v);
