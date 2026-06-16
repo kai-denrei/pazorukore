@@ -271,11 +271,19 @@ test('preset board sizes: easy 6×6, medium 8×8, hard 9×9', () => {
   assert.equal(sizeOf('hard'), 9);
 });
 
-test('hard puzzles are many small rectangles (every area ≤ 4, many regions)', () => {
+test('every difficulty forces at least one chunky region (≥6) — no all-2s/3s boards', () => {
+  for (const difficulty of ['easy', 'medium', 'hard']) {
+    for (const seed of [1, 2, 7, 42, 99]) {
+      const { playState } = shikaku.newPuzzle({ seed, difficulty });
+      assert.ok(maxClueArea(playState) >= 6, `${difficulty}/${seed}: expected a region ≥6, got max ${maxClueArea(playState)}`);
+    }
+  }
+});
+
+test('hard puzzles stay denser than easy (many regions on the larger grid)', () => {
   for (const seed of [1, 2, 7, 42, 99]) {
     const { playState } = shikaku.newPuzzle({ seed, difficulty: 'hard' });
-    assert.ok(maxClueArea(playState) <= 4, `hard/${seed}: max area ${maxClueArea(playState)} should be ≤ 4`);
-    assert.ok(clueCount(playState) >= 15, `hard/${seed}: expected many regions, got ${clueCount(playState)}`);
+    assert.ok(clueCount(playState) >= 10, `hard/${seed}: expected many regions, got ${clueCount(playState)}`);
   }
 });
 

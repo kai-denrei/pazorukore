@@ -7,7 +7,7 @@ import { renderVersionGlyphs } from './version-badge.js';
 import { initPWA } from './pwa.js';
 import { TimerDisplay } from './timer-display.js';
 import { ActionDisplay } from './action-display.js';
-import { ScoreKeeper } from './score.js';
+import { ScoreKeeper, SCORE } from './score.js';
 import { RULES } from './rules.js';
 import { Engine } from '../core/engine.js';
 import { EVENTS } from '../core/events.js';
@@ -445,11 +445,19 @@ function actionDisp() {
   if (!_timer.actDisp) { const cv = document.getElementById('action-canvas'); if (cv) _timer.actDisp = new ActionDisplay(cv); }
   return _timer.actDisp;
 }
+// START before a round → NEXT for the next game within a 10-game run → NEW once the run is complete.
+function actionLabel() {
+  if (app.phase === 'ready') return 'START';
+  const solved = app.score ? app.score.gameInRun : 0;
+  // at 'solved' renderAction runs AFTER record() so gameInRun already counts this solve; while
+  // 'playing' it's pre-solve, so look ahead one to preview the right label.
+  const done = app.phase === 'solved' ? solved : solved + 1;
+  return done >= SCORE.runLen ? 'NEW' : 'NEXT';
+}
 function renderAction() {
   const d = actionDisp(); if (!d) return;
   const active = app.phase === 'ready' || app.phase === 'solved';
-  // START before the round; NEW always present thereafter — ghosted while playing, lit when solved.
-  const label = app.phase === 'ready' ? 'START' : 'NEW';
+  const label = actionLabel();
   const btn = document.getElementById('btn-action');
   if (btn) { btn.dataset.phase = app.phase || 'ready'; btn.setAttribute('aria-label', active ? label : 'in play'); }
   d.render(label, active);
@@ -474,13 +482,13 @@ function onActionPress() {
 function onSolved() {
   stopTimer();
   app.phase = 'solved';
-  renderAction();
-  if (app.scored || !app.score || app.revealed) return;   // a revealed solution doesn't score
+  if (app.scored || !app.score || app.revealed) { renderAction(); return; } // a revealed solution doesn't score
   app.scored = true;
   const secs = _timer.elapsed / 1000;
   const opts = _timer.budgetMs != null ? { budget: _timer.budgetMs / 1000 } : undefined;
   const r = app.score.record(secs, app.undoUsed, opts);
   updateScoreHUD(r);
+  renderAction();   // after record() so the label reflects this solve (NEXT mid-run, NEW when complete)
   if (r.callout) showStreak(r.callout, r.tier);
   if (r.overlay) showPerfectOverlay(r);
 }

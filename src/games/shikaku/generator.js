@@ -80,16 +80,20 @@ function chooseAnchor(piece, rng) {
 // Each preset gives a grid size + a RANGE for the per-puzzle maximum rectangle area. generate()
 // picks a random maxArea in [maxAreaLo, maxAreaHi] per puzzle (seeded), so size/number of anchors
 // varies board to board within the stage's character.
+// `requireBig`: every generated board must contain at least one region of area >= this — a board of
+// only 2s/3s is visually boring and unfun, so we force a chunky anchor. maxAreaLo is kept >= requireBig
+// so the target is always reachable. (Difficulty now varies by grid size + small-region density, not by
+// capping everything small.)
 export const PRESETS = {
-  easy: { size: 6, minArea: 5, maxAreaLo: 8, maxAreaHi: 12 },
-  medium: { size: 8, minArea: 2, maxAreaLo: 5, maxAreaHi: 9 },
-  hard: { size: 9, minArea: 2, maxAreaLo: 3, maxAreaHi: 4 },
+  easy: { size: 6, minArea: 4, maxAreaLo: 8, maxAreaHi: 12, requireBig: 6 },
+  medium: { size: 8, minArea: 2, maxAreaLo: 6, maxAreaHi: 9, requireBig: 6 },
+  hard: { size: 9, minArea: 2, maxAreaLo: 6, maxAreaHi: 10, requireBig: 6 },
 };
 
 export function presetFor(params) {
   const base = PRESETS[params.difficulty] || PRESETS.easy;
   const size = params.size || base.size;
-  return { size, minArea: base.minArea, maxAreaLo: base.maxAreaLo, maxAreaHi: base.maxAreaHi };
+  return { size, minArea: base.minArea, maxAreaLo: base.maxAreaLo, maxAreaHi: base.maxAreaHi, requireBig: base.requireBig };
 }
 
 // Generate a uniquely-solvable Shikaku clue layout. Returns
@@ -97,13 +101,15 @@ export function presetFor(params) {
 // `tiling` is the generator's own solution (the rectangulation the clues were derived from);
 // because the layout is verified unique, it equals the solver's solution.
 export function generate(params) {
-  const { size, minArea, maxAreaLo, maxAreaHi } = presetFor(params);
+  const { size, minArea, maxAreaLo, maxAreaHi, requireBig } = presetFor(params);
   const rows = size, cols = size;
   const seed = (params.seed >>> 0) || 1;
 
   // Per-puzzle chunkiness: pick this board's maximum rectangle area (seeded → reproducible). A high
-  // pick yields fewer, larger anchors (e.g. 8,9,12); a low pick yields more, smaller ones.
-  const maxArea = params.maxArea || makeGenRng(seed).range(maxAreaLo, maxAreaHi);
+  // pick yields fewer, larger anchors (e.g. 8,9,12); a low pick yields more, smaller ones. Floor it at
+  // requireBig so a board with a chunky anchor is always reachable.
+  const big = requireBig || 1;
+  const maxArea = Math.max(big, params.maxArea || makeGenRng(seed).range(maxAreaLo, maxAreaHi));
 
   const budget = {
     maxAttempts: params.maxAttempts || 400,
@@ -121,6 +127,8 @@ export function generate(params) {
     const pieces = randomTiling(rows, cols, rng, { minArea, maxArea });
     // Reject pathological all-1×1 tilings (every clue "1" is trivially unique but a boring puzzle):
     if (pieces.length >= rows * cols) { if (!fallback) {/* keep looking */} continue; }
+    // Reject all-small tilings — force at least one chunky region (no all-2s/3s boards).
+    if (big > 1 && pieces.reduce((m, p) => Math.max(m, p.area), 0) < big) continue;
 
     for (let reroll = 0; reroll < budget.anchorRerolls; reroll++) {
       const clues = pieces.map((p, i) => {
