@@ -92,6 +92,18 @@ while IFS= read -r f; do
   fi
 done < <(walk_source_files)
 
+# ---------- 4. Bump the service-worker cache version (pk-<token>) ----------
+# Changes sw.js bytes every build so the browser detects a SW update; the new VERSION makes the
+# activate handler drop all old caches → the offline app shell can never go stale across builds.
+while IFS= read -r f; do
+  if grep -qE "VERSION = 'pk-[0-9a-f]+'" "$f"; then
+    sed "${SED_INPLACE[@]}" -E "s/(VERSION = 'pk-)[0-9a-f]+(')/\1${TOKEN}\2/g" "$f"
+    rm -f "${f}.cbbak"
+    [[ -z "$QUIET" ]] && echo "  ✓ sw cache version → pk-${TOKEN} in $f"
+    REWRITTEN=$((REWRITTEN + 1))
+  fi
+done < <(walk_source_files)
+
 if [[ -z "$QUIET" ]]; then
   echo ""
   echo "🧛  cache bust complete — token ${TOKEN}"
