@@ -386,6 +386,8 @@ body {
   border: 1px solid var(--chrome-line); font-family: var(--mono); font-size: 13px; text-transform: capitalize;
 }
 .pick[aria-pressed="true"] { border-color: var(--chrome-accent); color: var(--chrome-accent); }
+.pick.is-disabled { opacity: 0.32; cursor: not-allowed; text-decoration: line-through; }
+.pick.is-disabled:hover { border-color: var(--chrome-line); color: var(--chrome-ink); }
 
 /* pipeline / roadmap sheet */
 .pl-list { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 6px; }

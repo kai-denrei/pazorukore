@@ -24,6 +24,14 @@ const SKIN_LOADERS = {
 };
 const pickDefault = (mod) => mod.default || Object.values(mod)[0];
 
+// Temporarily-disabled (game × skin) pairings. Bridges' bridge/island renderer is only correct
+// under Futuristic right now; Retro (Lixie) and Pastel (split-flap) render broken, so they're
+// greyed out in the picker and coerced to a valid skin if reached via URL/game-ID. Drop the
+// entry once those two skins' bridge paths are fixed.
+const DISABLED_SKINS = { bridges: new Set(['retro', 'pastel']) };
+const skinDisabled = (gameId, skinId) => !!(DISABLED_SKINS[gameId] && DISABLED_SKINS[gameId].has(skinId));
+const firstEnabledSkin = (gameId) => Object.keys(SKIN_LOADERS).find((s) => !skinDisabled(gameId, s)) || 'futuristic';
+
 const app = {
   engine: new Engine(),
   game: null, skin: null, board: null, interaction: null, controls: null,
@@ -38,6 +46,7 @@ async function safeImport(loader) {
 }
 
 async function mountGame(gameId, skinId, params) {
+  if (skinDisabled(gameId, skinId)) skinId = firstEnabledSkin(gameId); // never mount a known-broken pairing
   app.gameId = gameId; app.skinId = skinId;
   document.body.dataset.game = gameId;
   document.body.dataset.skin = skinId;
@@ -207,17 +216,31 @@ function openSheet(id, html) {
 
 function openPicker() {
   const games = Object.keys(GAME_LOADERS), skins = Object.keys(SKIN_LOADERS);
-  const opt = (arr, sel) => arr.map((x) => `<button class="pick" data-v="${x}"${x === sel ? ' aria-pressed="true"' : ''}>${x}</button>`).join('');
+  const gameOpt = (sel) => games.map((x) => `<button class="pick" data-v="${x}"${x === sel ? ' aria-pressed="true"' : ''}>${x}</button>`).join('');
   openSheet('picker', `
     <h2>Game × Skin</h2>
-    <p class="muted">A — game</p><div class="pick-row" id="pick-games">${opt(games, app.gameId)}</div>
-    <p class="muted">B — skin</p><div class="pick-row" id="pick-skins">${opt(skins, app.skinId)}</div>
+    <p class="muted">A — game</p><div class="pick-row" id="pick-games">${gameOpt(app.gameId)}</div>
+    <p class="muted">B — skin</p><div class="pick-row" id="pick-skins"></div>
     <div class="sheet-links"><button class="link" data-a="pipeline">Pipeline</button><button class="link" data-a="tune">Tune</button><button class="link" data-a="settings">Settings</button><button class="link" data-a="about">About</button></div>`);
   const pk = document.getElementById('picker');
   let g = app.gameId, s = app.skinId;
-  pk.querySelectorAll('#pick-games .pick').forEach((b) => b.onclick = () => { g = b.dataset.v; mark('#pick-games', b); });
-  pk.querySelectorAll('#pick-skins .pick').forEach((b) => b.onclick = () => { s = b.dataset.v; mark('#pick-skins', b); });
+  if (skinDisabled(g, s)) s = firstEnabledSkin(g);
   function mark(sel, b) { pk.querySelectorAll(`${sel} .pick`).forEach((x) => x.removeAttribute('aria-pressed')); b.setAttribute('aria-pressed', 'true'); }
+  // (re)build the skin row for the currently-selected game `g`; disabled skins render greyed + inert.
+  function renderSkins() {
+    const row = pk.querySelector('#pick-skins');
+    row.innerHTML = skins.map((x) => {
+      const off = skinDisabled(g, x);
+      return `<button class="pick${off ? ' is-disabled' : ''}" data-v="${x}"${x === s ? ' aria-pressed="true"' : ''}${off ? ' disabled aria-disabled="true" title="not available for this game yet"' : ''}>${x}</button>`;
+    }).join('');
+    row.querySelectorAll('.pick').forEach((b) => { if (!b.disabled) b.onclick = () => { s = b.dataset.v; mark('#pick-skins', b); }; });
+  }
+  pk.querySelectorAll('#pick-games .pick').forEach((b) => b.onclick = () => {
+    g = b.dataset.v; mark('#pick-games', b);
+    if (skinDisabled(g, s)) s = firstEnabledSkin(g); // selected skin unavailable for the new game → fall back
+    renderSkins();
+  });
+  renderSkins();
   pk.querySelector('[data-a="pipeline"]').onclick = () => { pk.hidden = true; openPipeline(); };
   pk.querySelector('[data-a="tune"]').onclick = () => { pk.hidden = true; toggleAdmin(); };
   pk.querySelector('[data-a="about"]').onclick = () => { pk.hidden = true; openAbout(); };
