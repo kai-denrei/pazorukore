@@ -257,3 +257,42 @@ test('meta.stages.curveForGame ramps easy(1-3) → medium(4-7) → hard(8-10)', 
 test('defaultParams no longer pins size (preset size wins)', () => {
   assert.equal(shikaku.defaultParams().size, undefined);
 });
+
+function maxClueArea(playState) {
+  return Math.max(...playState.grid.cells
+    .filter((c) => c.role === ROLES.clue)
+    .map((c) => parseInt(c.value, 10)));
+}
+
+test('preset board sizes: easy 6×6, medium 8×8, hard 9×9', () => {
+  const sizeOf = (difficulty) => shikaku.newPuzzle({ seed: 1, difficulty }).params.size;
+  assert.equal(sizeOf('easy'), 6);
+  assert.equal(sizeOf('medium'), 8);
+  assert.equal(sizeOf('hard'), 9);
+});
+
+test('hard puzzles are many small rectangles (every area ≤ 4, many regions)', () => {
+  for (const seed of [1, 2, 7, 42, 99]) {
+    const { playState } = shikaku.newPuzzle({ seed, difficulty: 'hard' });
+    assert.ok(maxClueArea(playState) <= 4, `hard/${seed}: max area ${maxClueArea(playState)} should be ≤ 4`);
+    assert.ok(clueCount(playState) >= 15, `hard/${seed}: expected many regions, got ${clueCount(playState)}`);
+  }
+});
+
+test('easy puzzles cap area at 12 and can reach large (≥10) rectangles', () => {
+  let maxSeen = 0;
+  for (let seed = 1; seed <= 30; seed++) {
+    const { playState } = shikaku.newPuzzle({ seed, difficulty: 'easy' });
+    assert.ok(maxClueArea(playState) <= 12, `easy/${seed}: max area ${maxClueArea(playState)} should be ≤ 12`);
+    maxSeen = Math.max(maxSeen, maxClueArea(playState));
+  }
+  assert.ok(maxSeen >= 10, `expected some easy board with a ≥10 rectangle across seeds 1..30, max seen ${maxSeen}`);
+});
+
+test('easy has fewer regions than hard on the same seed', () => {
+  for (const seed of [1, 7, 42]) {
+    const easy = clueCount(shikaku.newPuzzle({ seed, difficulty: 'easy' }).playState);
+    const hard = clueCount(shikaku.newPuzzle({ seed, difficulty: 'hard' }).playState);
+    assert.ok(easy < hard, `seed ${seed}: easy ${easy} should be < hard ${hard}`);
+  }
+});
