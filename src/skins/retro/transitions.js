@@ -7,5 +7,5 @@ export const TRANSITIONS = {
   conflictDetected: { duration: 480, kind: 'flicker' },   // warm-red tube flicker (jitter brightness)
   regionValidated:  { duration: 600, kind: 'flush' },     // warm flush (region layer also reacts)
   hintRevealed:     { duration: 760, kind: 'warmGlow' },
-  solved:           { duration: 1750, kind: 'celebrate' }, // unison: swell to 0, then cycle 1→9 (tubes counting)
+  solved:           { duration: 3200, kind: 'celebrate' }, // unison: swell to 0, then cycle 1→9 (tubes counting)
 };

@@ -6,5 +6,5 @@ export const TRANSITIONS = {
   conflictDetected: { duration: 460, kind: 'stutter' },  // red segment stutter
   regionValidated:  { duration: 560, kind: 'halo' },     // border halo pulse (region layer also reacts)
   hintRevealed:     { duration: 700, kind: 'strike' },
-  solved:           { duration: 1750, kind: 'celebrate' }, // unison: strike to 0, then cycle 1→9 with bloom
+  solved:           { duration: 3200, kind: 'celebrate' }, // unison: strike to 0, then cycle 1→9 with bloom
 };

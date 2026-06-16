@@ -8,5 +8,5 @@ export const TRANSITIONS = {
   conflictDetected: { duration: 440, kind: 'jitter' },   // card shakes / misaligns on a bad placement
   regionValidated:  { duration: 560, kind: 'settle' },   // region cards re-seat with a soft bounce
   hintRevealed:     { duration: 600, kind: 'settle' },
-  solved:           { duration: 1750, kind: 'celebrate' }, // unison: flip to 0, then cycle 1→9 quickly
+  solved:           { duration: 3200, kind: 'celebrate' }, // unison: flip to 0, then cycle 1→9 (longer)
 };

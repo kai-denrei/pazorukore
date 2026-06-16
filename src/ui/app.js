@@ -356,11 +356,9 @@ const NEXT_GAMES = [
 ];
 // Feature / polish backlog (not games) — surfaced in the Pipeline "to do" section.
 const TODO_FEATURES = [
-  { n: 'Run recap', i: 'scoring', d: 'After the final round of a 10/10 run, show a recap table — one row per round (R# · time · result, e.g. PĀFEKUTO) plus the total score.' },
   { n: 'Session high-scores', i: 'scoring', d: 'Per session, keep a high-score board: the single fastest round, and the top-3 total run scores.' },
-  { n: 'Action display (START / NEW)', i: 'chrome', d: 'A permanent 16-segment display — like the timer, off-segments showing as ghost — in one fixed spot for continuity. Reads START on landing, NEW when a round is over and a new game can begin, and shows other messages. Glowing neon green glyphs.' },
-  { n: 'Ready-to-start gate', i: 'flow', d: 'On landing or refresh the timer does NOT auto-start — the player presses START when ready. The clock begins on START.' },
-  { n: 'Sudoku finalize FX', i: 'sudoku', d: 'Make the board-complete animation slightly longer and more “flipper”, with more glow variation (low → high → low).' },
+  { n: 'Sudoku finalize FX', i: 'sudoku', d: 'Make the board-complete animation more “flipper”, with more glow variation (low → high → low).' },
+  { n: 'Fillomino region tinting', i: 'render', d: 'Colour-code regions by value (Shikaku-style), updating live as the board fills.' },
 ];
 
 function openPipeline() {
@@ -468,7 +466,8 @@ function onSolved() {
   updateScoreHUD(r);
   renderAction();   // after record() so the label reflects this solve (NEXT mid-run, NEW when complete)
   if (r.callout) showStreak(r.callout, r.tier);
-  if (r.overlay) showPerfectOverlay(r);
+  if (r.runComplete) setTimeout(() => showRecap(r), 1600);    // let the board celebration play, then recap
+  else if (r.overlay) showPerfectOverlay(r);
 }
 
 function updateScoreHUD(r) {
@@ -512,7 +511,7 @@ function showStreak(callout, tier) {
   void el.offsetWidth;
   el.classList.add('show');
   clearTimeout(app._streakT);
-  app._streakT = setTimeout(() => { el.hidden = true; el.classList.remove('show'); }, 2700);
+  app._streakT = setTimeout(() => { el.hidden = true; el.classList.remove('show'); }, 3000);
   if (navigator.vibrate && app.haptics !== false) { try { navigator.vibrate(tier >= 3 ? [18, 28, 40] : 14); } catch (_) {} }
 }
 
@@ -525,6 +524,29 @@ function showPerfectOverlay(r) {
   clearTimeout(app._overlayT);
   app._overlayT = setTimeout(() => { el.hidden = true; }, 2800);
   el.onclick = () => { el.hidden = true; };
+}
+
+// End-of-run recap dashboard: a per-round table (R# · time · result) + the run total, after a 10/10 run.
+function showRecap(r) {
+  const sum = r.summary; if (!sum) return;
+  const rows = (sum.rounds || []).map((rd) => {
+    const time = rd.overBy > 0 ? `+${Math.ceil(rd.overBy)}s` : `${Math.round(rd.t)}s`;
+    const res = rd.label || (rd.overBy > 0 ? 'OVER' : 'clear');
+    return `<tr class="${rd.perfect ? 'rc-perfect' : ''}"><td class="rc-n">R${rd.n}</td><td class="rc-t">${time}</td><td class="rc-res">${res}</td><td class="rc-pts">+${rd.points.toLocaleString()}</td></tr>`;
+  }).join('');
+  const isBest = sum.total > 0 && sum.total >= (sum.best || 0);
+  openSheet('recap', `
+    <div class="recap-sheet">
+      <h2 class="recap-title ${sum.flawless ? 'is-flawless' : ''}">${sum.flawless ? '完璧 FLAWLESS' : 'RUN RECAP'}</h2>
+      <p class="muted">10 games · ${sum.perfects}/10 perfect${sum.bonus ? ` · run bonus +${sum.bonus.toLocaleString()}` : ''}</p>
+      <table class="recap-table"><tbody>${rows}</tbody></table>
+      <div class="recap-total"><span>TOTAL</span><span class="rc-total-val${isBest ? ' rc-best' : ''}">${sum.total.toLocaleString()}</span></div>
+      <p class="muted recap-best">${isBest ? '★ NEW BEST RUN' : `★ best ${(sum.best || 0).toLocaleString()}`}</p>
+      <button class="recap-new" type="button" data-recap-new>NEW RUN ▸</button>
+    </div>`);
+  const el = document.getElementById('recap');
+  const nb = el.querySelector('[data-recap-new]');
+  if (nb) nb.onclick = () => { el.hidden = true; newGameWith({}); };
 }
 
 function init() {
@@ -541,6 +563,11 @@ function init() {
   window.addEventListener('resize', () => { if (_timer.disp) renderTimer(); if (_timer.actDisp && app.phase) renderAction(); });
   document.getElementById('btn-menu').addEventListener('contextmenu', (e) => e.preventDefault());
   mountGame(app.gameId, app.skinId);
+  if (q.has('recap')) setTimeout(() => {   // dev: simulate a 10-game run and show the recap dashboard
+    const times = [7, 9, 22, 6, 11, 8, 30, 5, 13, 19], undos = [false, false, false, true, false, false, false, false, false, false];
+    let r; for (let i = 0; i < 10; i++) r = app.score.record(times[i], undos[i], {});
+    showRecap(r);
+  }, 400);
   const sheet = q.get('sheet');
   if (sheet === 'about') setTimeout(openAbout, 400);
   else if (sheet === 'settings') setTimeout(openSettings, 400);

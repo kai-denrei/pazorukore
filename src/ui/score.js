@@ -38,6 +38,7 @@ export class ScoreKeeper {
     this.runTotal = 0;
     this.gameInRun = 0;       // 0 before the first solve; 1..10 within a run
     this.perfectsInRun = 0;
+    this.rounds = [];         // per-round detail for the end-of-run recap dashboard
     this.streak = 0;          // continuous consecutive perfects (persists across runs)
     this.best = this._loadBest();
   }
@@ -73,6 +74,8 @@ export class ScoreKeeper {
     this.gameInRun += 1;
     this.runTotal += points;
     if (perfect) this.perfectsInRun += 1;
+    const roundTier = perfect ? Math.min(this.streak, HYPE.length - 1) : 0;
+    this.rounds.push({ n: this.gameInRun, t, perfect, points, overBy, label: perfect ? HYPE[roundTier].label : null });
 
     const runComplete = this.gameInRun >= SCORE.runLen;
     let flawless = false, runBonus = 0, summary = null;
@@ -80,7 +83,7 @@ export class ScoreKeeper {
       flawless = this.perfectsInRun >= SCORE.runLen;
       runBonus = flawless ? SCORE.flawlessBonus : this.perfectsInRun * SCORE.perfectRunStep;
       this.runTotal += runBonus;
-      summary = { total: this.runTotal, perfects: this.perfectsInRun, flawless, bonus: runBonus, best: this.best.runScore || 0 };
+      summary = { total: this.runTotal, perfects: this.perfectsInRun, flawless, bonus: runBonus, best: this.best.runScore || 0, rounds: this.rounds.slice() };
     }
 
     if (this.streak > (this.best.streak || 0)) this.best.streak = this.streak;
@@ -98,7 +101,7 @@ export class ScoreKeeper {
     };
   }
 
-  _newRun() { this.gameInRun = 0; this.runTotal = 0; this.perfectsInRun = 0; } // streak persists across runs
+  _newRun() { this.gameInRun = 0; this.runTotal = 0; this.perfectsInRun = 0; this.rounds = []; } // streak persists across runs
 
   _loadBest() { try { return JSON.parse(localStorage.getItem(LS) || 'null') || { runScore: 0, streak: 0 }; } catch (_) { return { runScore: 0, streak: 0 }; } }
   _saveBest() { try { localStorage.setItem(LS, JSON.stringify(this.best)); } catch (_) {} }
