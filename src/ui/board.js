@@ -9,6 +9,7 @@ import { getCell } from '../core/grid.js';
 import { makeRegionTint } from '../skins/_region-tint.js';
 import { makeCageRenderer } from '../skins/_cage.js';
 import { makeSlitherRenderer } from '../skins/_slither.js';
+import { makeShadeRenderer } from '../skins/_shade.js';
 
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)');
 
@@ -19,6 +20,8 @@ const regionTint = makeRegionTint();
 const cageRenderer = makeCageRenderer();
 // Shared Slitherlink loop renderer (dot lattice + neon loop edges; skin-agnostic).
 const slitherRenderer = makeSlitherRenderer();
+// Shared Nurikabe sea renderer (fills shaded cells; skin-agnostic).
+const shadeRenderer = makeShadeRenderer();
 
 export class Board {
   constructor(boardEl, engine, skin) {
@@ -159,6 +162,10 @@ export class Board {
     if (st.loop && g.game === 'slitherlink') {
       slitherRenderer.paint(this.gctx, g, st.loop, this.skin.slither || {});
     }
+    // Nurikabe: fill the shaded "sea" cells on the grid layer (separate `shaded` state object).
+    if (st.shaded && g.game === 'nurikabe') {
+      shadeRenderer.paint(this.gctx, g, st.shaded, this.skin.shade || {});
+    }
     // Fillomino: colour-code each value-region (flood-filled same-value blob) by its value, using the
     // skin's `tint` palette. Skin-agnostic — painted here so all three skins get it. Updates live
     // because repaintGrid runs on the grid-pulse (futuristic) and on each cell change (see _subscribe).
@@ -253,7 +260,7 @@ export class Board {
     on(EVENTS.cellCleared, (p) => { if (p && p.clueId != null) { this.validatedRegions.delete(p.clueId); this.repaintAll(); } });
     on(EVENTS.moved, ({ dir }) => {
       if (dir && dir !== 'do') this.repaintAll();            // undo/redo/restart may move regions/bridges/loop
-      else if (this.engine.current().bridges || this.engine.current().loop) this.repaintGrid(); // a bridge/loop 'do' redraws the grid layer
+      else if (this.engine.current().bridges || this.engine.current().loop || this.engine.current().shaded) this.repaintGrid(); // bridge/loop/shade 'do' redraws the grid layer
     });
 
     // semantic events that should ANIMATE their cell(s)

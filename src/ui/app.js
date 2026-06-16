@@ -22,6 +22,7 @@ const GAME_LOADERS = {
   fillomino: () => import('../games/fillomino/index.js'),
   kenken: () => import('../games/kenken/index.js'),
   slitherlink: () => import('../games/slitherlink/index.js'),
+  nurikabe: () => import('../games/nurikabe/index.js'),
 };
 const SKIN_LOADERS = {
   futuristic: () => import('../skins/futuristic/skin.js'),
@@ -156,6 +157,14 @@ function runDemo() {
     return;
   }
 
+  // cell-shade games (Nurikabe): shade ~60% of the solution sea.
+  if (app.game.meta.interaction === 'cell-shade') {
+    const ss = eng.solution && eng.solution.shaded; if (!ss) return;
+    const ids = Object.keys(ss), take = Math.ceil(ids.length * 0.6);
+    for (let k = 0; k < take; k++) eng.do({ type: 'shade', id: ids[k] });
+    return;
+  }
+
   // region-draw games: commit a few correct regions straight from the solution (proves region
   // membranes + validation rendering without simulating a pointer drag).
   if (app.game.meta.interaction === 'region-draw') {
@@ -195,7 +204,8 @@ async function bindInteraction(game, skin) {
     : kind === 'bridge-draw' ? '../interaction/bridge-draw.js'
       : kind === 'loop-draw' ? '../interaction/loop-draw.js'
         : kind === 'edge-draw' ? '../interaction/edge-draw.js'
-          : '../interaction/digit-entry.js';
+          : kind === 'cell-shade' ? '../interaction/cell-shade.js'
+            : '../interaction/digit-entry.js';
   const mod = await safeImport(() => import(/* @vite-ignore */ path));
   if (mod.__error) return;
   const Interaction = mod.default || Object.values(mod)[0];
@@ -364,9 +374,9 @@ const SHIPPED_GAMES = [
   { n: 'Fillomino', k: 'fillomino', i: 'digit-entry', d: 'Every cell holds a number; carve the grid into regions where a region of size N is filled entirely with N — no two equal-size regions touching. Rides every skin (digit glyphs).' },
   { n: 'KenKen', k: 'kenken', i: 'digit + cages', d: 'A Latin-square base with arithmetic cages — the numbers in each cage must combine to its target via +, −, × or ÷. Rides every skin.' },
   { n: 'Slitherlink', k: 'slitherlink', i: 'edge-draw', d: 'Draw a single closed loop along the grid lines; each clue says how many of its four sides the loop uses. Tap or drag along the dot lattice to lay/lift edges.' },
+  { n: 'Nurikabe', k: 'nurikabe', i: 'cell-shade', d: 'Shade cells into one connected “sea” so every clue becomes an island of exactly that many unshaded cells. Tap or drag to shade.' },
 ];
 const NEXT_GAMES = [
-  { n: 'Nurikabe', k: 'nurikabe', i: 'cell-shade', d: 'Shade cells into one connected “sea” so every clue becomes an island of exactly that many unshaded cells.' },
   { n: 'Star Battle', k: 'starbattle', i: 'star-place', d: 'Place stars so every row, column and region has exactly N, with no two stars touching.' },
   { n: 'Word / alnum', i: 'v2 glyphs', d: '16-segment & dot-matrix skins unlock letters; the capability negotiation already gates which skins can host alphabetic games.' },
 ];
@@ -669,6 +679,11 @@ function solveFromSolution() {
   if (g.meta.interaction === 'edge-draw') {
     const sl = eng.solution && eng.solution.loop; if (!sl) return;
     for (const key of Object.keys(sl)) { const [a, b] = key.split('|'); eng.do({ type: 'edge', a, b }); }
+    return;
+  }
+  if (g.meta.interaction === 'cell-shade') {
+    const ss = eng.solution && eng.solution.shaded; if (!ss) return;
+    for (const id of Object.keys(ss)) eng.do({ type: 'shade', id });
     return;
   }
   const sol = eng.solution && eng.solution.grid ? eng.solution.grid : null;
