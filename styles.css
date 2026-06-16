@@ -175,16 +175,19 @@ body {
 /* action button — a 16-segment START / NEW display (green twin of the timer bezel) */
 .action-wrap { position: relative; justify-self: center; }
 .action-btn {
-  width: 150px; height: 48px; padding: 5px 11px;
-  display: grid; place-items: stretch; cursor: pointer;
-  border-radius: 9px; overflow: hidden;          /* keep the glyph + glow inside the bezel */
+  position: relative;                              /* canvas fills this via inset:0 (definite size) */
+  width: 152px; height: 50px; padding: 0;
+  cursor: pointer;
+  border-radius: 9px; overflow: hidden;            /* clip only the soft glow halo at the bezel */
   background: #02110a;
   border: none;
   box-shadow: inset 0 0 0 1px #0c2a1a, inset 0 3px 10px -5px #000, 0 0 14px -8px #2bff84;
 }
 .action-btn[data-phase="playing"] { cursor: default; box-shadow: inset 0 0 0 1px #0c2a1a, inset 0 3px 10px -5px #000; }
 .action-btn:not([data-phase="playing"]):active { transform: translateY(1px) scale(0.99); }
-.action-canvas { width: 100%; height: 100%; display: block; }
+/* Absolute positioning takes the canvas out of the grid flow, so width/height:100% resolve against
+   the button's DEFINITE 152×50 (no circular dependency, no intrinsic-aspect fallback → no clipping). */
+.action-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 
 /* combo callout (center screen) — escalating tier color + scale (adapted from KikaCentroid) */
 .streak-flash {
