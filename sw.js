@@ -6,7 +6,7 @@
 // NetworkFirst keeps active development fresh (network wins when online) while still working offline.
 // We do NOT skipWaiting unconditionally — the page shows an update toast and posts SKIP_WAITING on consent.
 
-const VERSION = 'pk-0785bd98';           // bumped per build by scripts/bust.sh → a new build installs a
+const VERSION = 'pk-b6c7dc70';           // bumped per build by scripts/bust.sh → a new build installs a
                                          // fresh SW and drops all old caches on activate (so the offline
                                          // shell never goes stale). The hex suffix is the cache-bust token.
 const SHELL = `${VERSION}-shell`;

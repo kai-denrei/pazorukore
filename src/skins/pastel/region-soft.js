@@ -86,7 +86,7 @@ export function makeRegionSoft(palette) {
       // Shikaku region membranes (cells carrying a regionId) → rounded pastel panels.
       const regions = new Map();
       for (const cell of geom.grid.cells) {
-        if (cell.regionId == null || geom.game === 'kenken') continue; // kenken cages → _cage.js
+        if (cell.regionId == null || geom.game === 'kenken' || geom.game === 'starbattle') continue; // kenken cages → _cage.js
         const b = geom.boxes.get(cell.id); if (!b) continue;
         const r = regions.get(cell.regionId) || { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity, val: null };
         r.x0 = Math.min(r.x0, b.x); r.y0 = Math.min(r.y0, b.y);

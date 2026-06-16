@@ -61,6 +61,7 @@ export const retro = {
   cage: { line: '#ffb86b', text: '#ffe6c0' },   // KenKen cage outline + clue label (warm)
   slither: { line: '#ffb86b', dot: 'rgba(255,200,140,0.5)' },   // Slitherlink loop + lattice dots (warm)
   shade: { fill: 'rgba(150,88,38,0.52)', glow: '#c8782a' },     // Nurikabe sea (warm amber ink)
+  star: { fill: '#ffd27a', glow: '#ff9a3c' },                   // Star Battle star (warm gold)
   renderPolicy: (role) => (role === 'given' || role === 'fillable' || role === 'clue') ? 'device' : 'plain',
   applyPalette(rootEl) {
     for (const [k, v] of Object.entries(TOKENS)) rootEl.style.setProperty(k, v);

@@ -10,6 +10,7 @@ import { makeRegionTint } from '../skins/_region-tint.js';
 import { makeCageRenderer } from '../skins/_cage.js';
 import { makeSlitherRenderer } from '../skins/_slither.js';
 import { makeShadeRenderer } from '../skins/_shade.js';
+import { makeStarsRenderer } from '../skins/_stars.js';
 
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)');
 
@@ -22,6 +23,8 @@ const cageRenderer = makeCageRenderer();
 const slitherRenderer = makeSlitherRenderer();
 // Shared Nurikabe sea renderer (fills shaded cells; skin-agnostic).
 const shadeRenderer = makeShadeRenderer();
+// Shared Star Battle star renderer (region outlines reuse the cage renderer; skin-agnostic).
+const starsRenderer = makeStarsRenderer();
 
 export class Board {
   constructor(boardEl, engine, skin) {
@@ -172,9 +175,14 @@ export class Board {
     if (g.game === 'fillomino' && this.skin.tint) {
       regionTint.paint(this.gctx, g, this.skin.tint);
     }
-    // KenKen: bold cage outlines + clue labels (cages are static, so the normal grid repaint covers it).
-    if (g.game === 'kenken' && this.skin.cage) {
+    // KenKen + Star Battle: bold region outlines by regionId (KenKen cages / Star Battle regions are
+    // both non-rectangular, so they reuse the shared cage outline renderer; only KenKen has labels).
+    if ((g.game === 'kenken' || g.game === 'starbattle') && this.skin.cage) {
       cageRenderer.paint(this.gctx, g, this.skin.cage);
+    }
+    // Star Battle: glowing stars in the placed cells (separate `stars` state object).
+    if (st.stars && g.game === 'starbattle') {
+      starsRenderer.paint(this.gctx, g, st.stars, this.skin.star || {});
     }
   }
 
@@ -260,7 +268,7 @@ export class Board {
     on(EVENTS.cellCleared, (p) => { if (p && p.clueId != null) { this.validatedRegions.delete(p.clueId); this.repaintAll(); } });
     on(EVENTS.moved, ({ dir }) => {
       if (dir && dir !== 'do') this.repaintAll();            // undo/redo/restart may move regions/bridges/loop
-      else if (this.engine.current().bridges || this.engine.current().loop || this.engine.current().shaded) this.repaintGrid(); // bridge/loop/shade 'do' redraws the grid layer
+      else if (this.engine.current().bridges || this.engine.current().loop || this.engine.current().shaded || this.engine.current().stars) this.repaintGrid(); // bridge/loop/shade/star 'do' redraws the grid layer
     });
 
     // semantic events that should ANIMATE their cell(s)

@@ -109,7 +109,7 @@ export function makeRegionNeon(palette) {
       const box = geom.box || (geom.rows % 3 === 0 ? 3 : 0);
       // shikaku/bridges/masyu all want the all-OFF "ghost lattice" (no lit gridlines); the loop and
       // pearls (masyu) or region membranes (shikaku) carry the glow on top.
-      const sudoku = geom.game === 'sudoku', shikaku = geom.game === 'shikaku' || geom.game === 'bridges' || geom.game === 'masyu' || geom.game === 'kenken' || geom.game === 'slitherlink';
+      const sudoku = geom.game === 'sudoku', shikaku = geom.game === 'shikaku' || geom.game === 'bridges' || geom.game === 'masyu' || geom.game === 'kenken' || geom.game === 'slitherlink' || geom.game === 'starbattle';
       const TH = Math.max(1.5, first.w * (p.thickness / 100));
       const ins = TH;                       // notch inset at vertices
       const glow = glowAt(t == null ? 0 : t);
@@ -136,7 +136,7 @@ export function makeRegionNeon(palette) {
       // Shikaku region membranes — ON, coloured by clue value (the pulsing lit segments).
       const regions = new Map();
       for (const cell of geom.grid.cells) {
-        if (cell.regionId == null || geom.game === 'kenken') continue; // kenken cages are non-rectangular → drawn by _cage.js
+        if (cell.regionId == null || geom.game === 'kenken' || geom.game === 'starbattle') continue; // kenken cages are non-rectangular → drawn by _cage.js
         const b = geom.boxes.get(cell.id); if (!b) continue;
         const r = regions.get(cell.regionId) || { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity, val: null };
         r.x0 = Math.min(r.x0, b.x); r.y0 = Math.min(r.y0, b.y);
