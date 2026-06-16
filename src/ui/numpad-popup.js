@@ -21,7 +21,7 @@ export class NumpadPopup {
     if (pencil) { const tag = document.createElement('div'); tag.className = 'numpop-tag'; tag.textContent = 'candidate'; pad.appendChild(tag); }
     const grid = document.createElement('div');
     grid.className = 'numpop-grid';
-    for (let d = 1; d <= 9; d++) {
+    for (let d = 1; d <= size; d++) {                 // digits 1..board-size (Sudoku 9, Fillomino 7, …)
       const b = document.createElement('button');
       b.className = 'numpop-key'; b.type = 'button'; b.dataset.d = d;
       const left = counts ? Math.max(0, size - (counts.get(String(d)) || 0)) : null;

@@ -46,18 +46,39 @@ function floodRegion(vals, rows, cols, r, c) {
   return out;
 }
 
-// Does the region (set of flat indices, all value v) have an empty orthogonal neighbour it could
-// still grow into? If not, it is fully enclosed and its size is final.
-function regionCanGrow(vals, rows, cols, region) {
-  for (const idx of region) {
+// SOUND growth-space bound for a partial region of value v. A region of value v can still grow into
+// empty cells, and may MERGE with other value-v cells it reaches through empty cells (a legal merge
+// while total ≤ v). So the cells it could ultimately absorb form the connected component, starting
+// from `region`, that traverses through EMPTY cells and through OTHER value-v cells. We count cells
+// in that component NOT already in `region` (i.e. the extra capacity), capped at `need` (= v - size)
+// for an early exit. If that capacity < need, the region can never reach size v → prune.
+//
+// This is an OVER-estimate of reachable capacity (it ignores that some empty cells will be claimed
+// by other regions), so using it only to PRUNE when capacity < need is sound: we never reject a
+// branch that could actually complete.
+function reachableSpace(vals, rows, cols, region, need, v) {
+  const seen = new Set(region);
+  const stack = [];
+  for (const idx of region) stack.push(idx);
+  let count = 0;
+  while (stack.length && count < need) {
+    const idx = stack.pop();
     const r = Math.floor(idx / cols), c = idx % cols;
     for (const [dr, dc] of NB) {
       const nr = r + dr, nc = c + dc;
       if (nr < 0 || nc < 0 || nr >= rows || nc >= cols) continue;
-      if (vals[nr * cols + nc] === 0) return true;
+      const nidx = nr * cols + nc;
+      if (seen.has(nidx)) continue;
+      const nv = vals[nidx];
+      if (nv === 0 || nv === v) {
+        // An empty cell is absorbable; a same-value cell is reachable AND absorbable (legal merge).
+        seen.add(nidx);
+        count++;
+        stack.push(nidx);
+      }
     }
   }
-  return false;
+  return count;
 }
 
 // Validity check after placing value v at flat index `at`. `vals` already includes the placement.
@@ -66,23 +87,22 @@ function placementOk(vals, rows, cols, at) {
   const v = vals[at];
   const r = Math.floor(at / cols), c = at % cols;
 
-  // Rule 2: the new cell must not sit beside a DISTINCT complete region of the same value. Because
-  // we build regions incrementally and never let one exceed its value, a same-value neighbour that
-  // is part of a DIFFERENT region (i.e. the merged region would exceed v) is the failure we catch
-  // below via the over-grow rule. The explicit adjacency test for *complete* regions is covered by
-  // the over-grow rule too: two complete value-v regions touching would flood into one region of
-  // size 2v > v. So a single over-grow check after each placement enforces both rules 1 and 2.
-
-  // Flood the region this cell now belongs to and check it has not exceeded v (Rules 1 & 2).
+  // Flood the region this cell now belongs to. A same-value neighbour that belongs to a DISTINCT
+  // complete region merges in here, so this one over-grow test enforces BOTH "no region exceeds its
+  // value" (Rule 1) and "no two same-size complete regions touch" (Rule 2).
   const region = floodRegion(vals, rows, cols, r, c);
   if (region.length > v) return false;
 
-  // Rule 3 (look-ahead): if this region can no longer grow (fully enclosed) it must already have
-  // size === v. We must check the touched region AND any neighbouring regions whose growth room the
-  // new cell may have just removed.
-  if (region.length < v && !regionCanGrow(vals, rows, cols, region)) return false;
+  // Rule 3 + forward-check: an incomplete region must be able to reach its value through absorbable
+  // (empty or same-value) connected cells. If the reachable extra capacity < what it still needs,
+  // this branch can never complete → prune. This subsumes the "fully enclosed must equal value" case
+  // (capacity 0 < need). Huge win on sparse boards.
+  if (region.length < v) {
+    const need = v - region.length;
+    if (reachableSpace(vals, rows, cols, region, need, v) < need) return false;
+  }
 
-  // Neighbouring DIFFERENT-value regions may have just been enclosed by this placement.
+  // Neighbouring DIFFERENT-value regions may have just been enclosed / starved by this placement.
   const checked = new Set(region);
   for (const [dr, dc] of NB) {
     const nr = r + dr, nc = c + dc;
@@ -93,14 +113,18 @@ function placementOk(vals, rows, cols, at) {
     const nregion = floodRegion(vals, rows, cols, nr, nc);
     for (const x of nregion) checked.add(x);
     if (nregion.length > nv) return false;
-    if (nregion.length < nv && !regionCanGrow(vals, rows, cols, nregion)) return false;
+    if (nregion.length < nv) {
+      const need = nv - nregion.length;
+      if (reachableSpace(vals, rows, cols, nregion, need, nv) < need) return false;
+    }
   }
   return true;
 }
 
-// Candidate values for the empty cell at (r,c): [1, sideCap], honouring any given. We prune
-// candidates that obviously can't extend a too-big neighbouring region, but full validity is
-// confirmed by placementOk after the tentative placement.
+// Candidate values for the empty cell at (r,c), honouring any given. With no given we return the
+// FULL range [1, cap]; correctness comes from placementOk's SOUND pruning after each tentative
+// placement (an over-grow, an enclosed region that can't reach its value, or a starved region). We
+// keep candidate generation deliberately complete so the counter never misses a solution.
 function candidateValues(vals, rows, cols, r, c, givens, cap) {
   const g = givens ? givens[r * cols + c] : 0;
   if (g && g > 0) return [g];
@@ -111,11 +135,15 @@ function candidateValues(vals, rows, cols, r, c, givens, cap) {
 
 // Core backtracking fill. onSolution(vals) is called with the completed value grid (a flat array)
 // for each full valid Fillomino solution; return true from onSolution to STOP the search early.
-function search(rows, cols, givens, onSolution) {
+// `maxNodes` (optional) caps the number of cell-placement nodes explored; on overflow the search
+// aborts and sets out.aborted=true (the caller treats an aborted uniqueness check conservatively).
+function search(rows, cols, givens, onSolution, maxNodes = Infinity, out = {}) {
   const N = rows * cols;
   const cap = sideCap(rows, cols);
   const vals = new Int32Array(N);
   if (givens) for (let i = 0; i < N; i++) if (givens[i] > 0) vals[i] = givens[i];
+  let nodes = 0;
+  out.aborted = false;
 
   // Validate the givens themselves don't already contradict (over-grown given regions).
   for (let i = 0; i < N; i++) {
@@ -125,11 +153,26 @@ function search(rows, cols, givens, onSolution) {
     if (region.length > vals[i]) return; // givens contradict — no solution
   }
 
-  function recurse(start) {
-    let i = start;
-    while (i < N && vals[i] !== 0) i++;
-    if (i === N) {
-      // Fully filled — verify every region size === value (final guard; pruning should ensure it).
+  // Viable candidate values for the empty cell at index `i`: those that survive placementOk when
+  // tentatively placed. Returns the list (possibly empty). Sound + complete.
+  function viableAt(i) {
+    const r = Math.floor(i / cols), c = i % cols;
+    const ok = [];
+    for (const v of candidateValues(vals, rows, cols, r, c, givens, cap)) {
+      vals[i] = v;
+      if (placementOk(vals, rows, cols, i)) ok.push(v);
+      vals[i] = 0;
+    }
+    return ok;
+  }
+
+  // Most-constrained-cell (MRV) backtracking. At each step choose the empty cell with the FEWEST
+  // viable candidates — prefer cells already touching filled cells (more constrained), which makes
+  // proving uniqueness on sparse boards far cheaper than a fixed row-major sweep. Sound: fill order
+  // doesn't affect the set of complete solutions.
+  function recurse(remaining) {
+    if (remaining === 0) {
+      // Fully filled — final guard: every region size === value (pruning should already ensure it).
       const seen = new Uint8Array(N);
       for (let idx = 0; idx < N; idx++) {
         if (seen[idx]) continue;
@@ -140,18 +183,42 @@ function search(rows, cols, givens, onSolution) {
       }
       return onSolution(Array.from(vals));
     }
-    const r = Math.floor(i / cols), c = i % cols;
-    for (const v of candidateValues(vals, rows, cols, r, c, givens, cap)) {
-      vals[i] = v;
-      if (placementOk(vals, rows, cols, i)) {
-        if (recurse(i + 1)) { vals[i] = 0; return true; }
+
+    // Pick the empty cell with the fewest viable candidates. Bias selection toward cells adjacent to
+    // a filled cell so the search stays local and well-constrained.
+    let bestIdx = -1, bestOpts = null, bestScore = Infinity;
+    for (let i = 0; i < N; i++) {
+      if (vals[i] !== 0) continue;
+      const r = Math.floor(i / cols), c = i % cols;
+      let touchesFilled = false;
+      for (const [dr, dc] of NB) {
+        const nr = r + dr, nc = c + dc;
+        if (nr < 0 || nc < 0 || nr >= rows || nc >= cols) continue;
+        if (vals[nr * cols + nc] !== 0) { touchesFilled = true; break; }
       }
-      vals[i] = 0;
+      const opts = viableAt(i);
+      if (opts.length === 0) return false;              // dead cell → prune this branch immediately
+      // Score: fewer options first; among ties prefer cells touching filled cells (tie-break -0.5).
+      const score = opts.length - (touchesFilled ? 0.5 : 0);
+      if (score < bestScore) {
+        bestScore = score; bestIdx = i; bestOpts = opts;
+        if (opts.length === 1 && touchesFilled) break;  // can't do better than a forced local cell
+      }
+    }
+
+    for (const v of bestOpts) {
+      if (++nodes > maxNodes) { out.aborted = true; return true; } // bail: stop the whole search
+      vals[bestIdx] = v;
+      const stop = recurse(remaining - 1);
+      vals[bestIdx] = 0;
+      if (stop) return true;
     }
     return false;
   }
 
-  recurse(0);
+  let empties = 0;
+  for (let i = 0; i < N; i++) if (vals[i] === 0) empties++;
+  recurse(empties);
 }
 
 // Count solutions, capped at `limit` (default 2 — all we need for uniqueness). Returns 0, 1, or
@@ -163,6 +230,18 @@ export function countSolutions(rows, cols, givens, limit = 2) {
     return count >= limit;
   });
   return count;
+}
+
+// Bounded uniqueness probe for the generator's clue-digging hot loop. Returns true iff the givens
+// are provably UNIQUELY solvable WITHIN the node budget. If the search aborts (too expensive) we
+// return false — conservative: the generator then keeps the clue rather than risk a non-unique
+// puzzle. This NEVER reports a non-unique board as unique. Not part of the public solver API.
+export function isUniqueBounded(rows, cols, givens, maxNodes) {
+  let count = 0;
+  const out = {};
+  search(rows, cols, givens, () => { count++; return count >= 2; }, maxNodes, out);
+  if (out.aborted) return false; // ran out of budget → treat as "not provably unique"
+  return count === 1;
 }
 
 // Return one filled value grid (flat Int array) for the givens, or null if unsolvable.

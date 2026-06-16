@@ -46,6 +46,9 @@ const sudoku = {
     name: 'Sudoku',
     interaction: 'digit-entry',
     requirements: { glyphSet: 'digits', needsOffState: true, needsRegionFill: false },
+    // each digit appears exactly `size` times → the numpad can show a per-digit "remaining" badge.
+    // (Fillomino reuses digit-entry but has no fixed per-value count, so it omits this.)
+    fixedDigitCounts: true,
   },
 
   defaultParams() {

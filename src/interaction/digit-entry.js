@@ -46,8 +46,13 @@ export class DigitEntry {
 
   _openPad(id, x, y) {
     const st = this.engine.current();
-    const counts = new Map();
-    for (const c of st.grid.cells) if (c.value != null) counts.set(c.value, (counts.get(c.value) || 0) + 1);
+    // per-digit "remaining" badge only makes sense when each value has a fixed count (Sudoku);
+    // games like Fillomino reuse digit-entry but have no fixed per-value count → no badge.
+    let counts = null;
+    if (this.game.meta && this.game.meta.fixedDigitCounts) {
+      counts = new Map();
+      for (const c of st.grid.cells) if (c.value != null) counts.set(c.value, (counts.get(c.value) || 0) + 1);
+    }
     this.popup.show(x, y, {
       size: st.grid.rows,
       counts,

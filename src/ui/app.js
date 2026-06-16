@@ -18,6 +18,7 @@ const GAME_LOADERS = {
   shikaku: () => import('../games/shikaku/index.js'),
   bridges: () => import('../games/bridges/index.js'),
   masyu: () => import('../games/masyu/index.js'),
+  fillomino: () => import('../games/fillomino/index.js'),
 };
 const SKIN_LOADERS = {
   futuristic: () => import('../skins/futuristic/skin.js'),
@@ -325,9 +326,9 @@ const SHIPPED_GAMES = [
   { n: 'Shikaku', k: 'shikaku', i: 'region-draw', d: 'Divide the grid into rectangles; each rectangle’s area equals the clue number it contains.' },
   { n: 'Bridges', k: 'bridges', i: 'bridge-draw', d: 'Connect numbered islands with bridges (1 or 2 between a pair, never crossing) so each island has exactly its number of bridges and the whole network is one connected web. (Tatham’s Bridges / Hashiwokakero.)' },
   { n: 'Pearl', k: 'masyu', i: 'loop-draw', d: 'Draw one closed loop through the centres of adjacent squares: every black circle must be a corner (and not touch another corner), every white circle a straight that meets at least one corner. Drag between squares to lay or lift loop segments. (Tatham’s Pearl / Masyu.)' },
+  { n: 'Fillomino', k: 'fillomino', i: 'digit-entry', d: 'Every cell holds a number; carve the grid into regions where a region of size N is filled entirely with N — no two equal-size regions touching. Rides every skin (digit glyphs).' },
 ];
 const NEXT_GAMES = [
-  { n: 'Fillomino', k: 'fillomino', i: 'region-paint', d: 'Every cell holds a number; carve the grid into regions where a region of size N is filled entirely with N. The densest glyph showcase.' },
   { n: 'KenKen / Killer', k: 'kenken', i: 'digit + cages', d: 'A Latin-square base with arithmetic cages — the numbers in each cage must reach a target via +, −, × or ÷.' },
   { n: 'Slitherlink', k: 'slitherlink', i: 'edge-draw', d: 'Draw a single closed loop along the grid lines; each clue says how many of its four sides the loop uses. Needs a new edge-draw interaction.' },
   { n: 'Nurikabe', k: 'nurikabe', i: 'cell-shade', d: 'Shade cells into one connected “sea” so every clue becomes an island of exactly that many unshaded cells.' },
